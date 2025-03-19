@@ -1,5 +1,15 @@
 // Standard Vercel API route structure
 const axios = require('axios');
+const https = require('https');
+
+// Simple UUID generator
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 module.exports = async (req, res) => {
   // Enable CORS
@@ -43,16 +53,20 @@ module.exports = async (req, res) => {
     console.log('End image format check (first 30 chars):', finalImage.substring(0, 30));
     
     try {
-      // FAL.ai endpoint - as per documentation
+      // FAL.ai direct request using their recommended format
       const falEndpoint = 'https://api.fal.ai/models/fal-ai/vidu/start-end-to-video';
       console.log('Using FAL.ai endpoint:', falEndpoint);
       
       // Determine if images are URLs or base64 data
       const isBase64 = startImage.startsWith('data:');
       
+      // Create a unique request ID
+      const requestId = generateUUID();
+      
       // Prepare payload according to FAL.ai documentation
       let payload = {
         prompt: "Show a natural transition between these images",
+        seed: Math.floor(Math.random() * 1000000) // Random seed for better results
       };
       
       // Add images according to whether they're URLs or base64 data
@@ -66,40 +80,62 @@ module.exports = async (req, res) => {
         payload.end_image_url = finalImage;
       }
       
-      console.log('Prepared payload structure:', Object.keys(payload).join(', '));
+      console.log('Prepared payload with request ID:', requestId);
       
+      // Configure the request with a longer timeout
+      const agent = new https.Agent({
+        keepAlive: true,
+        timeout: 60000, // 60 second socket timeout
+        rejectUnauthorized: true // Ensure SSL verification
+      });
+      
+      // Set up headers with the API key
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Key ${apiKey}`,
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'User-Agent': 'BarMitzvahVideoGenerator/1.0'
       };
       
       console.log('Sending request to FAL.ai...');
       
-      // Create a custom axios instance with extended timeout
-      const axiosInstance = axios.create({
-        timeout: 180000, // 3 minute timeout
+      // Make the API request
+      const response = await axios({
+        method: 'POST',
+        url: falEndpoint,
+        data: payload,
+        headers: headers,
+        httpsAgent: agent,
+        timeout: 180000, // 3 minute request timeout
+        validateStatus: status => status < 500, // Only treat 500+ as errors
+        maxContentLength: 100 * 1024 * 1024, // 100MB max response size
+        maxBodyLength: 100 * 1024 * 1024 // 100MB max request size
       });
       
-      // Make the API request according to FAL.ai documentation
-      const response = await axiosInstance.post(falEndpoint, payload, { 
-        headers,
-      });
+      console.log(`FAL.ai response received with status: ${response.status}`);
       
-      console.log('FAL.ai response received with status:', response.status);
-      console.log('Response data structure:', Object.keys(response.data).join(', '));
+      // Handle non-200 responses
+      if (response.status !== 200) {
+        console.error('Error response:', response.status, response.data);
+        return res.status(response.status).json({
+          error: true,
+          message: response.data?.message || `Error from FAL.ai API (${response.status})`
+        });
+      }
       
-      // Check if response has the video URL in the format from the documentation
+      // Log response structure
+      console.log('Response data keys:', Object.keys(response.data).join(', '));
+      
+      // Check response format
       if (response.data && response.data.video && response.data.video.url) {
-        console.log('Found video URL in response.data.video.url');
+        console.log('Found video URL in video.url field');
         return res.json({ 
           output: { 
             video: response.data.video.url 
           } 
         });
       } else if (response.data && response.data.video_url) {
-        // Fallback for older API response format
-        console.log('Found video URL in response.data.video_url');
+        console.log('Found video URL in video_url field');
         return res.json({ 
           output: { 
             video: response.data.video_url 
@@ -114,45 +150,57 @@ module.exports = async (req, res) => {
       }
     } catch (axiosError) {
       console.error('Error in axios request:', axiosError.message);
-      if (axiosError.code === 'ECONNABORTED') {
-        return res.status(504).json({
-          error: true,
-          message: 'Request to FAL.ai timed out. Please try again.'
-        });
-      }
       
-      if (axiosError.code === 'ENOTFOUND') {
-        return res.status(503).json({
-          error: true, 
-          message: 'Could not resolve FAL.ai hostname. Please check your network connection.'
-        });
+      // Detailed error logging
+      if (axiosError.code) {
+        console.error('Error code:', axiosError.code);
       }
       
       if (axiosError.response) {
-        console.error('API error response:', JSON.stringify(axiosError.response.data).substring(0, 200));
+        console.error('Response status:', axiosError.response.status);
+        console.error('Response headers:', JSON.stringify(axiosError.response.headers));
+        console.error('Response data:', JSON.stringify(axiosError.response.data).substring(0, 200));
         
-        // Handle specific error codes
-        if (axiosError.response.status === 401) {
-          return res.status(401).json({ 
-            error: true,
-            message: 'Invalid API key. Please check your FAL.ai API key.'
-          });
-        }
-        
+        // Return the actual error from the API
         return res.status(axiosError.response.status).json({
           error: true,
-          message: axiosError.response.data.message || 'Error from FAL.ai API'
+          message: axiosError.response.data?.message || `Error ${axiosError.response.status} from FAL.ai API`
+        });
+      } else if (axiosError.request) {
+        // The request was made but no response was received
+        console.error('No response received - request details:');
+        console.error('Request URL:', axiosError.config?.url);
+        console.error('Request method:', axiosError.config?.method);
+        
+        // Handle specific network errors
+        if (axiosError.code === 'ECONNABORTED') {
+          return res.status(504).json({
+            error: true,
+            message: 'Request to FAL.ai timed out after 3 minutes. The service might be experiencing high load.'
+          });
+        } else if (axiosError.code === 'ENOTFOUND') {
+          return res.status(503).json({
+            error: true, 
+            message: 'Could not resolve FAL.ai hostname. DNS resolution failed.'
+          });
+        } else {
+          return res.status(500).json({
+            error: true,
+            message: `Network error: ${axiosError.code || 'No response received from FAL.ai API'}`
+          });
+        }
+      } else {
+        // Something happened in setting up the request
+        console.error('Error setting up request:', axiosError.message);
+        return res.status(500).json({
+          error: true,
+          message: `Error setting up request: ${axiosError.message}`
         });
       }
-      
-      // If we reach here, it's a network error without a response
-      return res.status(500).json({
-        error: true,
-        message: 'No response received from FAL.ai API. Please check your network connection.'
-      });
     }
   } catch (error) {
     console.error('General error in proxy request:', error.message);
+    console.error(error.stack);
     return res.status(500).json({
       error: true,
       message: error.message || 'Unknown error occurred'
