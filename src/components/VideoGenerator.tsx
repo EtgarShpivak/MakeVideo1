@@ -10,10 +10,14 @@ import {
   Snackbar,
   Link,
   LinearProgress,
-  Divider
+  Divider,
+  FormControlLabel,
+  Checkbox,
+  Tooltip
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import InfoIcon from '@mui/icons-material/Info';
+import BugReportIcon from '@mui/icons-material/BugReport';
 import { useApp } from '../context/AppContext';
 import falService from '../api/falService';
 
@@ -45,11 +49,13 @@ const VideoGenerator: React.FC = () => {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [diagnosticMode, setDiagnosticMode] = useState(false);
+  const [testMode, setTestMode] = useState(false);
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [attemptCount, setAttemptCount] = useState(0);
+  const [apiCheckStatus, setApiCheckStatus] = useState<'unknown' | 'checking' | 'available' | 'unavailable'>('unknown');
 
   // Clear console logs
   useEffect(() => {
@@ -57,6 +63,36 @@ const VideoGenerator: React.FC = () => {
       setLogMessages([]);
     }
   }, [loading]);
+
+  // Check API availability when component mounts
+  useEffect(() => {
+    checkApiAvailability();
+  }, []);
+
+  // Check if our API endpoint is available
+  const checkApiAvailability = async () => {
+    setApiCheckStatus('checking');
+    try {
+      // Add cache-busting parameter
+      const response = await fetch(`/api/fal?t=${Date.now()}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        setApiCheckStatus('available');
+        console.log('API endpoint is available');
+      } else {
+        setApiCheckStatus('unavailable');
+        console.error('API endpoint returned error:', response.status);
+      }
+    } catch (error) {
+      setApiCheckStatus('unavailable');
+      console.error('Error checking API availability:', error);
+    }
+  };
 
   // Override console.log and console.error when in diagnostic mode
   useEffect(() => {
@@ -124,7 +160,7 @@ const VideoGenerator: React.FC = () => {
       return;
     }
 
-    if (!apiKey) {
+    if (!apiKey && !testMode) {
       setError('Please enter your FAL.ai API key');
       return;
     }
@@ -167,7 +203,9 @@ const VideoGenerator: React.FC = () => {
         ];
         
         try {
-          const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
+          // Add test mode parameter if enabled
+          const options = testMode ? { testMode: true } : undefined;
+          const videoResult = await falService.generateVideo(imageBase64Array, apiKey, options);
           
           timeoutIds.forEach(clearTimeout);
           clearProgress();
@@ -199,6 +237,11 @@ const VideoGenerator: React.FC = () => {
         errorMessage = 'Invalid API key. Please check your FAL.ai API key and try again.';
       } else if (errorMessage.includes('converting') || errorMessage.includes('processing')) {
         errorMessage = 'Error processing your images. Please try uploading them again or use different images.';
+      } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        errorMessage = 'Network error. Could not connect to the server. Please check your internet connection and try again.';
+        
+        // Check API availability
+        checkApiAvailability();
       }
       
       setError(errorMessage);
@@ -222,6 +265,15 @@ const VideoGenerator: React.FC = () => {
         Generate Video
       </Typography>
       
+      {apiCheckStatus === 'unavailable' && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Could not connect to the API server. The server might be down or your internet connection might be unstable.
+          <Button size="small" onClick={checkApiAvailability} sx={{ ml: 1 }}>
+            Retry Connection
+          </Button>
+        </Alert>
+      )}
+      
       <Box sx={{ mb: 3 }}>
         <TextField
           label="FAL.ai API Key"
@@ -231,6 +283,7 @@ const VideoGenerator: React.FC = () => {
           placeholder="Enter your FAL.ai API key"
           type="password"
           sx={{ mb: 2 }}
+          disabled={testMode}
           helperText={
             <span>
               Get your API key from{' '}
@@ -241,25 +294,52 @@ const VideoGenerator: React.FC = () => {
           }
         />
         
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Tooltip title="Test mode uses a mock API response and doesn't require a real API key">
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={testMode}
+                  onChange={(e) => setTestMode(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label="Test Mode (no API key needed)"
+            />
+          </Tooltip>
+          
+          <Button
+            variant="text"
+            startIcon={<InfoIcon />}
+            onClick={toggleDiagnosticMode}
+            size="small"
+          >
+            {diagnosticMode ? 'Hide Diagnostic Info' : 'Show Diagnostic Info'}
+          </Button>
+        </Box>
+        
         <Button
           variant="contained"
           startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <MovieIcon />}
           onClick={handleGenerateVideo}
-          disabled={loading || images.length === 0}
+          disabled={loading || images.length < 2 || (apiCheckStatus === 'unavailable' && !testMode)}
           fullWidth
         >
           {loading ? 'Generating...' : 'Generate Video'}
         </Button>
         
-        <Button
-          variant="text"
-          startIcon={<InfoIcon />}
-          onClick={toggleDiagnosticMode}
-          size="small"
-          sx={{ mt: 1 }}
-        >
-          {diagnosticMode ? 'Hide Diagnostic Info' : 'Show Diagnostic Info'}
-        </Button>
+        {diagnosticMode && (
+          <Button
+            variant="outlined"
+            startIcon={<BugReportIcon />}
+            onClick={checkApiAvailability}
+            size="small"
+            sx={{ mt: 1 }}
+            fullWidth
+          >
+            Check API Availability
+          </Button>
+        )}
         
         {loading && (
           <Box sx={{ mt: 2 }}>

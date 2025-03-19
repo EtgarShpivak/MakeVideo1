@@ -10,14 +10,25 @@ interface VideoResponse {
   status: string;
 }
 
+interface GenerateVideoOptions {
+  testMode?: boolean;
+  retryOnFailure?: boolean;
+}
+
 // FAL.ai API service
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 3000; // 3 seconds
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const generateVideo = async (images: string[], apiKey: string): Promise<string> => {
+const generateVideo = async (
+  images: string[], 
+  apiKey: string, 
+  options: GenerateVideoOptions = {}
+): Promise<string> => {
   let lastError: Error | null = null;
+  
+  const { testMode = false, retryOnFailure = true } = options;
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -35,7 +46,9 @@ const generateVideo = async (images: string[], apiKey: string): Promise<string> 
       
       // Add a unique cache-busting parameter to avoid any caching issues
       const cacheBuster = `?t=${Date.now()}`;
-      const requestUrl = `${endpoint}${cacheBuster}`;
+      // Add test mode parameter if needed
+      const testParam = testMode ? '&test=true' : '';
+      const requestUrl = `${endpoint}${cacheBuster}${testParam}`;
       
       console.log(`Sending request to ${requestUrl}`);
       
@@ -102,11 +115,12 @@ const generateVideo = async (images: string[], apiKey: string): Promise<string> 
       lastError = error;
       console.error(`Attempt ${attempt + 1} failed:`, error.message);
       
-      // If network-related error and we have retries left, wait and retry
-      if (attempt < MAX_RETRIES && 
-         (error.message.includes('No response received') || 
-          error.message.includes('timed out') ||
-          error.message.includes('Failed to fetch'))) {
+      // If network-related error and we have retries left and retry is enabled, wait and retry
+      if (retryOnFailure && 
+          attempt < MAX_RETRIES && 
+          (error.message.includes('No response received') || 
+           error.message.includes('timed out') ||
+           error.message.includes('Failed to fetch'))) {
         console.log(`Retrying in ${RETRY_DELAY / 1000} seconds...`);
         await sleep(RETRY_DELAY);
         continue;
