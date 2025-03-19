@@ -37,7 +37,7 @@ const VideoGenerator: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const imageBase64Array = images.map(img => img.dataURL);
+      const imageBase64Array = images.map(img => img.preview);
       const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
       
       setVideoUrl(videoResult);

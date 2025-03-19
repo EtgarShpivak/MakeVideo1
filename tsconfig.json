@@ -17,5 +17,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["src/electron/**", "node_modules", "dist"]
+  "exclude": ["src/electron/**", "node_modules", "dist", "src/server/**/*.ts"]
 }
