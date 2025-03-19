@@ -3,4 +3,4 @@
     { "source": "/api/fal", "destination": "/api/fal/index.js" },
     { "source": "/api/health", "destination": "/api/health/index.js" }
   ]
-} 
+}
