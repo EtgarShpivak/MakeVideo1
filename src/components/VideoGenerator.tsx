@@ -8,7 +8,8 @@ import {
   CircularProgress,
   Alert,
   Snackbar,
-  Link
+  Link,
+  LinearProgress
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import { useApp } from '../context/AppContext';
@@ -18,9 +19,42 @@ const VideoGenerator: React.FC = () => {
   const { images } = useApp();
   const [apiKey, setApiKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  // Function to simulate progress for better UX
+  const startProgressSimulation = () => {
+    setLoadingProgress(0);
+    setLoadingMessage('Preparing images...');
+    
+    // Stage 1: Preparing
+    setTimeout(() => {
+      setLoadingProgress(10);
+      setLoadingMessage('Sending request to FAL.ai...');
+    }, 1000);
+    
+    // Stage 2: Sending
+    setTimeout(() => {
+      setLoadingProgress(20);
+      setLoadingMessage('Generating video (this may take up to 30-60 seconds)...');
+    }, 3000);
+    
+    // Stage 3-9: Processing
+    const interval = setInterval(() => {
+      setLoadingProgress(prev => {
+        if (prev >= 90) {
+          clearInterval(interval);
+          return 90;
+        }
+        return prev + 10;
+      });
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  };
 
   const handleGenerateVideo = async () => {
     if (images.length < 2) {
@@ -36,12 +70,32 @@ const VideoGenerator: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      const clearProgress = startProgressSimulation();
       
       const imageBase64Array = images.map(img => img.preview);
-      const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
       
-      setVideoUrl(videoResult);
-      setSuccess(true);
+      // Set a timeout to handle long-running requests
+      const timeoutId = setTimeout(() => {
+        if (loading) {
+          setLoadingMessage('Still working... The server might be busy. Please be patient.');
+        }
+      }, 30000); // 30 seconds
+      
+      try {
+        const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
+        
+        clearTimeout(timeoutId);
+        clearProgress();
+        setLoadingProgress(100);
+        setLoadingMessage('Video generated successfully!');
+        
+        setVideoUrl(videoResult);
+        setSuccess(true);
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        clearProgress();
+        throw err;
+      }
     } catch (err: any) {
       console.error('Error generating video:', err);
       setError(err.message || 'Failed to generate video');
@@ -89,6 +143,15 @@ const VideoGenerator: React.FC = () => {
         >
           {loading ? 'Generating...' : 'Generate Video'}
         </Button>
+        
+        {loading && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" gutterBottom>
+              {loadingMessage}
+            </Typography>
+            <LinearProgress variant="determinate" value={loadingProgress} sx={{ mt: 1 }} />
+          </Box>
+        )}
       </Box>
       
       {videoUrl && (

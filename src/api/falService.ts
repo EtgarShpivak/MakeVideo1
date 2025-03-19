@@ -18,7 +18,12 @@ const generateVideo = async (images: string[], apiKey: string): Promise<string> 
     // Always use the Vercel API route since we're deployed
     const endpoint = '/api/fal';
     
-    console.log('Using production endpoint');
+    console.log('Using production endpoint:', endpoint);
+    
+    // Check image format
+    const firstImage = images[0];
+    const imageFormat = firstImage.substring(0, 30);
+    console.log('Image format check:', imageFormat);
     
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -28,8 +33,17 @@ const generateVideo = async (images: string[], apiKey: string): Promise<string> 
       body: JSON.stringify({ images, apiKey }),
     });
     
+    console.log('Response status:', response.status);
+    
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+      let errorData;
+      try {
+        errorData = await response.json();
+        console.error('Error response data:', errorData);
+      } catch (e) {
+        console.error('Failed to parse error response', e);
+        errorData = { message: 'Unknown error' };
+      }
       
       // Handle specific error cases
       if (response.status === 401) {
@@ -44,12 +58,15 @@ const generateVideo = async (images: string[], apiKey: string): Promise<string> 
     }
     
     const data = await response.json();
+    console.log('Response data structure:', Object.keys(data).join(', '));
     
-    if (!data.output || !data.output.video) {
+    if (data.output && data.output.video) {
+      console.log('Successfully received video URL');
+      return data.output.video;
+    } else {
+      console.error('Invalid response format:', data);
       throw new Error('Invalid response format from API');
     }
-    
-    return data.output.video;
   } catch (error: any) {
     console.error('Error generating video:', error);
     throw error;
