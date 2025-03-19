@@ -3,6 +3,7 @@ import axios from 'axios';
 interface VideoGenerationParams {
   images: string[];
   apiKey: string;
+  prompt?: string;
 }
 
 interface VideoResponse {
@@ -13,6 +14,7 @@ interface VideoResponse {
 interface GenerateVideoOptions {
   testMode?: boolean;
   retryOnFailure?: boolean;
+  prompt?: string;
 }
 
 // FAL.ai API service
@@ -28,7 +30,7 @@ const generateVideo = async (
 ): Promise<string> => {
   let lastError: Error | null = null;
   
-  const { testMode = false, retryOnFailure = true } = options;
+  const { testMode = false, retryOnFailure = true, prompt = "A cinematic time-lapse showing progression" } = options;
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -43,6 +45,7 @@ const generateVideo = async (
       const firstImage = images[0];
       const imageFormat = firstImage.substring(0, 30);
       console.log('Image format check:', imageFormat);
+      console.log('Using prompt:', prompt);
       
       // Add a unique cache-busting parameter to avoid any caching issues
       const cacheBuster = `?t=${Date.now()}`;
@@ -53,7 +56,7 @@ const generateVideo = async (
       console.log(`Sending request to ${requestUrl}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+      const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 minute timeout for Kling
       
       try {
         const response = await fetch(requestUrl, {
@@ -61,7 +64,11 @@ const generateVideo = async (
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ images, apiKey }),
+          body: JSON.stringify({ 
+            images, 
+            apiKey,
+            prompt 
+          }),
           signal: controller.signal
         });
         
@@ -106,7 +113,7 @@ const generateVideo = async (
         
         if (fetchError.name === 'AbortError') {
           console.error('Request timed out');
-          throw new Error('Request timed out. The server took too long to respond.');
+          throw new Error('Request timed out. The Kling model can take several minutes to generate a video. Please try again.');
         } else {
           throw fetchError;
         }

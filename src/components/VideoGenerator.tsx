@@ -13,7 +13,9 @@ import {
   Divider,
   FormControlLabel,
   Checkbox,
-  Tooltip
+  Tooltip,
+  Card,
+  CardContent
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import InfoIcon from '@mui/icons-material/Info';
@@ -45,6 +47,7 @@ const blobUrlToBase64 = async (blobUrl: string): Promise<string> => {
 const VideoGenerator: React.FC = () => {
   const { images } = useApp();
   const [apiKey, setApiKey] = useState('');
+  const [prompt, setPrompt] = useState('A cinematic time-lapse showing progression');
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState('');
@@ -120,12 +123,12 @@ const VideoGenerator: React.FC = () => {
   // Function to simulate progress for better UX
   const startProgressSimulation = () => {
     setLoadingProgress(0);
-    setLoadingMessage('Preparing images...');
+    setLoadingMessage('Preparing image...');
     
     // Stage 1: Preparing
     setTimeout(() => {
       setLoadingProgress(10);
-      setLoadingMessage('Converting images to base64...');
+      setLoadingMessage('Converting image to base64...');
     }, 1000);
     
     // Stage 2: Sending
@@ -134,10 +137,10 @@ const VideoGenerator: React.FC = () => {
       setLoadingMessage('Sending request to FAL.ai...');
     }, 3000);
     
-    // Stage 3: Processing
+    // Stage 3: Processing - Kling takes longer
     setTimeout(() => {
       setLoadingProgress(30);
-      setLoadingMessage('Generating video (this may take up to 1-3 minutes)...');
+      setLoadingMessage('Generating video (this may take up to 3-6 minutes)...');
     }, 5000);
     
     // Stage 4-9: Processing
@@ -149,14 +152,14 @@ const VideoGenerator: React.FC = () => {
         }
         return prev + 5;
       });
-    }, 5000);
+    }, 8000); // Slower progress for Kling model
     
     return () => clearInterval(interval);
   };
 
   const handleGenerateVideo = async () => {
-    if (images.length < 2) {
-      setError('Please upload at least 2 images');
+    if (images.length < 1) {
+      setError('Please upload at least 1 image');
       return;
     }
 
@@ -173,7 +176,7 @@ const VideoGenerator: React.FC = () => {
       const clearProgress = startProgressSimulation();
       
       // Convert blob URLs to base64 strings
-      setLoadingMessage('Converting images to proper format...');
+      setLoadingMessage('Converting image to proper format...');
       
       try {
         console.log('Original image previews:', images.map(img => img.preview.substring(0, 30)));
@@ -189,22 +192,28 @@ const VideoGenerator: React.FC = () => {
         const imageBase64Array = await Promise.all(imagePromises);
         console.log('Converted images to base64 format');
         
-        // Set timeouts for user feedback
+        // Set timeouts for user feedback - Kling needs longer timeouts
         const timeoutIds = [
           setTimeout(() => {
-            setLoadingMessage('Still working... The server might be busy. Please be patient.');
+            setLoadingMessage('Still working... The Kling model takes longer to generate high-quality videos. Please be patient.');
           }, 30000), // 30 seconds
           setTimeout(() => {
-            setLoadingMessage('This is taking longer than expected. The FAL.ai service might be experiencing high load.');
-          }, 60000), // 1 minute
+            setLoadingMessage('This is taking longer than expected. The Kling model typically takes 3-6 minutes.');
+          }, 90000), // 1.5 minutes
           setTimeout(() => {
-            setLoadingMessage('Still trying... Video generation can take up to 3 minutes.');
-          }, 120000), // 2 minutes
+            setLoadingMessage('Still working... The Kling model is creating your video (can take up to 6 minutes).');
+          }, 180000), // 3 minutes
+          setTimeout(() => {
+            setLoadingMessage('Almost there... The video is being finalized.');
+          }, 300000), // 5 minutes
         ];
         
         try {
           // Add test mode parameter if enabled
-          const options = testMode ? { testMode: true } : undefined;
+          const options = {
+            testMode: testMode,
+            prompt: prompt
+          };
           const videoResult = await falService.generateVideo(imageBase64Array, apiKey, options);
           
           timeoutIds.forEach(clearTimeout);
@@ -232,11 +241,11 @@ const VideoGenerator: React.FC = () => {
       if (errorMessage.includes('No response received')) {
         errorMessage = 'No response received from FAL.ai API. The service might be down or experiencing issues. Please try again later.';
       } else if (errorMessage.includes('timed out')) {
-        errorMessage = 'The request timed out. FAL.ai might be experiencing high load. Please try again later.';
+        errorMessage = 'The request timed out. The Kling model can take up to 6 minutes to generate a video. Please try again.';
       } else if (errorMessage.includes('API key')) {
         errorMessage = 'Invalid API key. Please check your FAL.ai API key and try again.';
       } else if (errorMessage.includes('converting') || errorMessage.includes('processing')) {
-        errorMessage = 'Error processing your images. Please try uploading them again or use different images.';
+        errorMessage = 'Error processing your image. Please try uploading again or use a different image.';
       } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
         errorMessage = 'Network error. Could not connect to the server. Please check your internet connection and try again.';
         
@@ -264,6 +273,22 @@ const VideoGenerator: React.FC = () => {
       <Typography variant="h6" gutterBottom>
         Generate Video
       </Typography>
+      
+      <Card variant="outlined" sx={{ mb: 3, bgcolor: '#f9f9f9' }}>
+        <CardContent>
+          <Typography variant="subtitle2" color="primary" gutterBottom>
+            How It Works
+          </Typography>
+          <Typography variant="body2">
+            This generator uses the Kling 1.6 Image-to-Video model from FAL.ai. It transforms a single image into a dynamic video based on your prompt.
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            • Upload at least one image<br />
+            • Enter a descriptive prompt (e.g., "A cinematic time-lapse of a child growing up")<br />
+            • The model will create a stylized video from your image
+          </Typography>
+        </CardContent>
+      </Card>
       
       {apiCheckStatus === 'unavailable' && (
         <Alert severity="warning" sx={{ mb: 2 }}>
@@ -294,6 +319,18 @@ const VideoGenerator: React.FC = () => {
           }
         />
         
+        <TextField
+          label="Video Generation Prompt"
+          fullWidth
+          multiline
+          rows={2}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Describe how you want the video to look"
+          sx={{ mb: 2 }}
+          helperText="Be descriptive about the style and motion you want in the video"
+        />
+        
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Tooltip title="Test mode uses a mock API response and doesn't require a real API key">
             <FormControlLabel
@@ -322,7 +359,7 @@ const VideoGenerator: React.FC = () => {
           variant="contained"
           startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <MovieIcon />}
           onClick={handleGenerateVideo}
-          disabled={loading || images.length < 2 || (apiCheckStatus === 'unavailable' && !testMode)}
+          disabled={loading || images.length < 1 || (apiCheckStatus === 'unavailable' && !testMode)}
           fullWidth
         >
           {loading ? 'Generating...' : 'Generate Video'}

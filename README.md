@@ -1,101 +1,58 @@
 # Bar Mitzvah Time-Lapse Video Generator
 
-Upload your images, arrange them in order, and generate a time-lapse video using FAL.ai's video transition API.
+A web application that uses AI to generate dynamic videos from photos, perfect for creating time-lapse effects for Bar/Bat Mitzvah celebrations or any other event where you want to show growth or progression over time.
 
 ## Features
 
-- Upload and preview multiple images
-- Drag and drop to reorder images
-- Numbered images to ensure correct ordering
-- Generate smooth video transitions between images
-- Download the generated video
+- Upload and organize your photos
+- Generate videos from a single image using AI
+- Customize videos with descriptive prompts
+- Simple and intuitive interface
+- Secure API integration with FAL.ai
+
+## How It Works
+
+This application uses the FAL.ai Kling 1.6 Image-to-Video model to transform a single photo into a dynamic video. The AI applies creative motion and effects based on your descriptive prompt.
+
+1. **Upload a photo**: Select or drag & drop an image you want to transform
+2. **Enter your prompt**: Describe how you want the video to look (e.g., "A cinematic time-lapse of a child growing up")
+3. **Generate video**: With your FAL.ai API key, create a unique video from your image
+4. **Download and share**: Save the generated video to use in your celebration
 
 ## Getting Started
 
-### Prerequisites
+To use this application:
 
-- [Node.js](https://nodejs.org/) (v14 or higher)
-- [npm](https://www.npmjs.com/) (comes with Node.js)
-- A FAL.ai API key (get one at [fal.ai](https://fal.ai))
+1. Get an API key from [FAL.ai](https://fal.ai)
+2. Upload at least one image
+3. Enter a descriptive prompt for the video
+4. Click "Generate Video"
 
-### Installation
+The video generation process takes approximately 3-6 minutes as the Kling model creates high-quality videos.
 
-1. Clone the repository or download the files
-2. Install dependencies:
+## Technical Details
 
-```bash
-npm install
-```
+- Built with React and Material UI
+- Uses serverless functions for API integration
+- Fully responsive design for all devices
+- Secure client-side handling of API keys
 
-### Running the Application
+## Test Mode
 
-The application requires both the Express server (for API proxy) and the Vite development server to run.
-
-**Option 1: Run both servers with one command**
-
-```bash
-npm run start
-```
-
-This starts both the Express API server and the Vite development server concurrently.
-
-**Option 2: Run servers separately**
-
-In one terminal:
-
-```bash
-npm run server
-```
-
-In another terminal:
-
-```bash
-npm run dev
-```
-
-**Option 3: Use the provided batch file (Windows only)**
-
-```bash
-.\start.bat
-```
-
-This will open both servers in separate command windows.
-
-### Building for Production
-
-To build the application for production:
-
-```bash
-npm run build
-```
-
-Then start the production server:
-
-```bash
-npm run server
-```
-
-Visit `http://localhost:4000` to view the application.
+The application includes a test mode for trying the interface without requiring an API key. This allows you to explore the application's features before obtaining your FAL.ai API key.
 
 ## Troubleshooting
 
-### API Connection Issues
+If you experience issues:
 
-If you encounter errors like "Cannot connect to FAL.ai API" or "DNS resolution failed":
+- Ensure your FAL.ai API key is valid
+- Check your internet connection
+- Try using a different image (high-quality photos work best)
+- Use the diagnostic mode to see detailed logs
 
-1. Make sure both servers are running (Express server on port 4000)
-2. Check your internet connection
-3. Try using a VPN - some networks block access to the FAL.ai domain
-4. If using a corporate or school network, try a different network or a mobile hotspot
-5. Verify your FAL.ai API key is valid
-6. If all else fails, try running the application on a different network
+## Deployment
 
-### Image Requirements
-
-- Upload at least 2 images
-- Images should be in common formats (JPEG, PNG)
-- For best results, use images with similar subjects/compositions
-- Very large images may take longer to process
+This application can be deployed on Vercel, Netlify, or any other static site hosting service. The API integration is handled through serverless functions to maintain security.
 
 ## License
 

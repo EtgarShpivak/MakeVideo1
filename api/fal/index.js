@@ -59,46 +59,47 @@ module.exports = async (req, res) => {
     if (reqBodySafe.apiKey) reqBodySafe.apiKey = '***REDACTED***';
     console.log('[DEBUG] Request body:', JSON.stringify(reqBodySafe));
     
-    const { images, apiKey } = req.body;
+    const { images, apiKey, prompt } = req.body;
     
     if (!apiKey) {
       console.log('[ERROR] API key missing');
       return res.status(400).json({ error: 'API key is required' });
     }
     
-    if (!images || images.length < 2) {
-      console.log('[ERROR] Not enough images provided');
-      return res.status(400).json({ error: 'At least 2 images are required' });
+    if (!images || images.length < 1) {
+      console.log('[ERROR] No images provided');
+      return res.status(400).json({ error: 'At least 1 image is required' });
     }
     
     console.log(`[INFO] Processing request with ${images.length} images`);
     
-    // Get first and last images
-    const startImage = images[0];
-    const finalImage = images[images.length - 1];
+    // Get the first image (for Kling model, we only need one image)
+    const inputImage = images[0];
     
     // Validate image format
-    if (!startImage || !finalImage) {
-      console.log('[ERROR] Invalid image data provided - null or undefined images');
+    if (!inputImage) {
+      console.log('[ERROR] Invalid image data provided - null or undefined image');
       return res.status(400).json({ error: 'Invalid image data provided' });
     }
     
-    // Log a small part of each image to verify format
+    // Default prompt if none provided
+    const videoPrompt = prompt || "A cinematic time-lapse showing progression";
+    
+    // Log a small part of the image to verify format
     try {
-      console.log('[DEBUG] Start image format check (first 30 chars):', typeof startImage === 'string' ? startImage.substring(0, 30) : typeof startImage);
-      console.log('[DEBUG] End image format check (first 30 chars):', typeof finalImage === 'string' ? finalImage.substring(0, 30) : typeof finalImage);
-      console.log('[DEBUG] Start image length:', typeof startImage === 'string' ? startImage.length : 'not a string');
-      console.log('[DEBUG] End image length:', typeof finalImage === 'string' ? finalImage.length : 'not a string');
+      console.log('[DEBUG] Image format check (first 30 chars):', typeof inputImage === 'string' ? inputImage.substring(0, 30) : typeof inputImage);
+      console.log('[DEBUG] Image length:', typeof inputImage === 'string' ? inputImage.length : 'not a string');
+      console.log('[DEBUG] Using prompt:', videoPrompt);
     } catch (e) {
       console.error('[ERROR] Error checking image format:', e.message);
       return res.status(400).json({ error: 'Invalid image format: ' + e.message });
     }
     
     // Validate base64 images
-    if (typeof startImage === 'string' && startImage.startsWith('data:')) {
-      if (!isValidBase64Image(startImage) || !isValidBase64Image(finalImage)) {
+    if (typeof inputImage === 'string' && inputImage.startsWith('data:')) {
+      if (!isValidBase64Image(inputImage)) {
         console.log('[ERROR] Invalid base64 image format');
-        return res.status(400).json({ error: 'Invalid image format. Images must be valid base64 encoded JPG or PNG.' });
+        return res.status(400).json({ error: 'Invalid image format. Image must be a valid base64 encoded JPG or PNG.' });
       }
     }
     
@@ -118,31 +119,30 @@ module.exports = async (req, res) => {
     }
     
     try {
-      // FAL.ai direct request using their recommended format
-      const falEndpoint = 'https://api.fal.ai/models/fal-ai/vidu/start-end-to-video';
+      // Use the Kling 1.6 Image to Video model instead
+      const falEndpoint = 'https://api.fal.ai/models/fal-ai/kling-video/v1.6/pro/image-to-video';
       console.log('[INFO] Using FAL.ai endpoint:', falEndpoint);
       
-      // Determine if images are URLs or base64 data
-      const isBase64 = typeof startImage === 'string' && startImage.startsWith('data:');
+      // Determine if image is URL or base64 data
+      const isBase64 = typeof inputImage === 'string' && inputImage.startsWith('data:');
       
       // Create a unique request ID
       const requestId = generateUUID();
       
-      // Prepare payload according to FAL.ai documentation
+      // Prepare payload according to Kling model documentation
       let payload = {
-        prompt: "Show a natural transition between these images",
-        seed: Math.floor(Math.random() * 1000000) // Random seed for better results
+        prompt: videoPrompt,
+        image_url: null, // We'll set this based on the image type
       };
       
-      // Add images according to whether they're URLs or base64 data
+      // Add image according to whether it's URL or base64 data
       if (isBase64) {
         console.log('[INFO] Using base64 image format');
-        payload.start_image = startImage;
-        payload.end_image = finalImage;
+        payload.image = inputImage; // For base64, use 'image' field
+        delete payload.image_url; // Remove the null field
       } else {
         console.log('[INFO] Using URL image format');
-        payload.start_image_url = startImage;
-        payload.end_image_url = finalImage;
+        payload.image_url = inputImage;
       }
       
       console.log('[INFO] Prepared payload with request ID:', requestId);
@@ -151,7 +151,7 @@ module.exports = async (req, res) => {
       // Configure the request with a longer timeout
       const agent = new https.Agent({
         keepAlive: true,
-        timeout: 60000, // 60 second socket timeout
+        timeout: 360000, // 6 minute socket timeout (Kling takes longer)
         rejectUnauthorized: true // Ensure SSL verification
       });
       
@@ -175,7 +175,7 @@ module.exports = async (req, res) => {
           data: payload,
           headers: headers,
           httpsAgent: agent,
-          timeout: 180000, // 3 minute request timeout
+          timeout: 360000, // 6 minute request timeout for Kling
           validateStatus: status => status < 500, // Only treat 500+ as errors
           maxContentLength: 100 * 1024 * 1024, // 100MB max response size
           maxBodyLength: 100 * 1024 * 1024 // 100MB max request size
@@ -201,19 +201,12 @@ module.exports = async (req, res) => {
         // Log response structure
         console.log('[DEBUG] Response data keys:', Object.keys(response.data).join(', '));
         
-        // Check response format
+        // Check response format for Kling model
         if (response.data && response.data.video && response.data.video.url) {
           console.log('[INFO] Found video URL in video.url field');
           return res.json({ 
             output: { 
               video: response.data.video.url 
-            } 
-          });
-        } else if (response.data && response.data.video_url) {
-          console.log('[INFO] Found video URL in video_url field');
-          return res.json({ 
-            output: { 
-              video: response.data.video_url 
             } 
           });
         } else {
@@ -270,7 +263,7 @@ module.exports = async (req, res) => {
           if (axiosError.code === 'ECONNABORTED') {
             return res.status(504).json({
               error: true,
-              message: 'Request to FAL.ai timed out after 3 minutes. The service might be experiencing high load.'
+              message: 'Request to FAL.ai timed out after 6 minutes. The Kling model takes longer to generate videos - please try again.'
             });
           } else if (axiosError.code === 'ENOTFOUND') {
             return res.status(503).json({
