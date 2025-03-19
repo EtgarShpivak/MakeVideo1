@@ -4,6 +4,9 @@ interface VideoGenerationParams {
   images: string[];
   apiKey: string;
   prompt?: string;
+  negativePrompt?: string;
+  duration?: number;
+  aspectRatio?: string;
 }
 
 interface VideoResponse {
@@ -15,6 +18,9 @@ interface GenerateVideoOptions {
   testMode?: boolean;
   retryOnFailure?: boolean;
   prompt?: string;
+  negativePrompt?: string;
+  duration?: number;
+  aspectRatio?: string;
 }
 
 // FAL.ai API service
@@ -30,7 +36,14 @@ const generateVideo = async (
 ): Promise<string> => {
   let lastError: Error | null = null;
   
-  const { testMode = false, retryOnFailure = true, prompt = "A cinematic time-lapse showing progression" } = options;
+  const { 
+    testMode = false, 
+    retryOnFailure = true, 
+    prompt = "A cinematic time-lapse showing progression",
+    negativePrompt = "",
+    duration = 5,
+    aspectRatio = "16:9"
+  } = options;
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -46,6 +59,13 @@ const generateVideo = async (
       const imageFormat = firstImage.substring(0, 30);
       console.log('Image format check:', imageFormat);
       console.log('Using prompt:', prompt);
+      
+      if (negativePrompt) {
+        console.log('Using negative prompt:', negativePrompt);
+      }
+      
+      console.log('Using duration:', duration);
+      console.log('Using aspect ratio:', aspectRatio);
       
       // Add a unique cache-busting parameter to avoid any caching issues
       const cacheBuster = `?t=${Date.now()}`;
@@ -67,7 +87,10 @@ const generateVideo = async (
           body: JSON.stringify({ 
             images, 
             apiKey,
-            prompt 
+            prompt,
+            negativePrompt,
+            duration,
+            aspectRatio
           }),
           signal: controller.signal
         });

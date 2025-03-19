@@ -15,7 +15,13 @@ import {
   Checkbox,
   Tooltip,
   Card,
-  CardContent
+  CardContent,
+  MenuItem,
+  Select,
+  SelectChangeEvent,
+  InputLabel,
+  FormControl,
+  Grid
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import InfoIcon from '@mui/icons-material/Info';
@@ -44,10 +50,17 @@ const blobUrlToBase64 = async (blobUrl: string): Promise<string> => {
   }
 };
 
+// Available durations and aspect ratios
+const DURATION_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10];
+const ASPECT_RATIO_OPTIONS = ["16:9", "1:1", "9:16", "4:3", "3:4"];
+
 const VideoGenerator: React.FC = () => {
   const { images } = useApp();
   const [apiKey, setApiKey] = useState('');
   const [prompt, setPrompt] = useState('A cinematic time-lapse showing progression');
+  const [negativePrompt, setNegativePrompt] = useState('blur, distort, and low quality');
+  const [duration, setDuration] = useState<number>(5);
+  const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState('');
@@ -97,6 +110,16 @@ const VideoGenerator: React.FC = () => {
     }
   };
 
+  // Handle duration change
+  const handleDurationChange = (event: SelectChangeEvent<number>) => {
+    setDuration(event.target.value as number);
+  };
+
+  // Handle aspect ratio change
+  const handleAspectRatioChange = (event: SelectChangeEvent) => {
+    setAspectRatio(event.target.value);
+  };
+
   // Override console.log and console.error when in diagnostic mode
   useEffect(() => {
     if (diagnosticMode && loading) {
@@ -123,12 +146,12 @@ const VideoGenerator: React.FC = () => {
   // Function to simulate progress for better UX
   const startProgressSimulation = () => {
     setLoadingProgress(0);
-    setLoadingMessage('Preparing image...');
+    setLoadingMessage('Preparing images...');
     
     // Stage 1: Preparing
     setTimeout(() => {
       setLoadingProgress(10);
-      setLoadingMessage('Converting image to base64...');
+      setLoadingMessage('Converting images to base64...');
     }, 1000);
     
     // Stage 2: Sending
@@ -176,7 +199,7 @@ const VideoGenerator: React.FC = () => {
       const clearProgress = startProgressSimulation();
       
       // Convert blob URLs to base64 strings
-      setLoadingMessage('Converting image to proper format...');
+      setLoadingMessage('Converting images to proper format...');
       
       try {
         console.log('Original image previews:', images.map(img => img.preview.substring(0, 30)));
@@ -212,7 +235,10 @@ const VideoGenerator: React.FC = () => {
           // Add test mode parameter if enabled
           const options = {
             testMode: testMode,
-            prompt: prompt
+            prompt: prompt,
+            negativePrompt: negativePrompt,
+            duration: duration,
+            aspectRatio: aspectRatio
           };
           const videoResult = await falService.generateVideo(imageBase64Array, apiKey, options);
           
@@ -245,7 +271,7 @@ const VideoGenerator: React.FC = () => {
       } else if (errorMessage.includes('API key')) {
         errorMessage = 'Invalid API key. Please check your FAL.ai API key and try again.';
       } else if (errorMessage.includes('converting') || errorMessage.includes('processing')) {
-        errorMessage = 'Error processing your image. Please try uploading again or use a different image.';
+        errorMessage = 'Error processing your images. Please try uploading them again or use different images.';
       } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
         errorMessage = 'Network error. Could not connect to the server. Please check your internet connection and try again.';
         
@@ -280,12 +306,13 @@ const VideoGenerator: React.FC = () => {
             How It Works
           </Typography>
           <Typography variant="body2">
-            This generator uses the Kling 1.6 Image-to-Video model from FAL.ai. It transforms a single image into a dynamic video based on your prompt.
+            This generator uses the Kling 1.6 Image-to-Video model from FAL.ai. It transforms either a single image or a pair of images (start and tail) into a dynamic video based on your prompt.
           </Typography>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            • Upload at least one image<br />
+            • Upload 1 image for standard video or 2 images for a transition effect<br />
             • Enter a descriptive prompt (e.g., "A cinematic time-lapse of a child growing up")<br />
-            • The model will create a stylized video from your image
+            • Customize duration, aspect ratio, and negative prompt<br />
+            • The model will create a stylized video from your image(s)
           </Typography>
         </CardContent>
       </Card>
@@ -331,6 +358,57 @@ const VideoGenerator: React.FC = () => {
           helperText="Be descriptive about the style and motion you want in the video"
         />
         
+        <TextField
+          label="Negative Prompt (what to avoid)"
+          fullWidth
+          multiline
+          rows={1}
+          value={negativePrompt}
+          onChange={(e) => setNegativePrompt(e.target.value)}
+          placeholder="Describe unwanted elements (e.g., blur, distortion, low quality)"
+          sx={{ mb: 2 }}
+          helperText="Elements to avoid in the video generation"
+        />
+        
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={6}>
+            <FormControl fullWidth>
+              <InputLabel id="duration-select-label">Duration (seconds)</InputLabel>
+              <Select
+                labelId="duration-select-label"
+                id="duration-select"
+                value={duration}
+                label="Duration (seconds)"
+                onChange={handleDurationChange}
+              >
+                {DURATION_OPTIONS.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {option} seconds
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={6}>
+            <FormControl fullWidth>
+              <InputLabel id="aspect-ratio-select-label">Aspect Ratio</InputLabel>
+              <Select
+                labelId="aspect-ratio-select-label"
+                id="aspect-ratio-select"
+                value={aspectRatio}
+                label="Aspect Ratio"
+                onChange={handleAspectRatioChange}
+              >
+                {ASPECT_RATIO_OPTIONS.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {option}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+        
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Tooltip title="Test mode uses a mock API response and doesn't require a real API key">
             <FormControlLabel
@@ -353,6 +431,21 @@ const VideoGenerator: React.FC = () => {
           >
             {diagnosticMode ? 'Hide Diagnostic Info' : 'Show Diagnostic Info'}
           </Button>
+        </Box>
+        
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" gutterBottom>
+            <strong>Selected Images:</strong> {images.length === 0 ? 'None' : 
+              images.length === 1 ? '1 image (single-image mode)' : 
+              `2 images (transition mode - from first to second)`
+            }
+          </Typography>
+          
+          {images.length === 2 && (
+            <Typography variant="body2" color="primary">
+              Using transition mode: The video will transition from the first image to the second
+            </Typography>
+          )}
         </Box>
         
         <Button

@@ -59,7 +59,7 @@ module.exports = async (req, res) => {
     if (reqBodySafe.apiKey) reqBodySafe.apiKey = '***REDACTED***';
     console.log('[DEBUG] Request body:', JSON.stringify(reqBodySafe));
     
-    const { images, apiKey, prompt } = req.body;
+    const { images, apiKey, prompt, negativePrompt, duration, aspectRatio } = req.body;
     
     if (!apiKey) {
       console.log('[ERROR] API key missing');
@@ -73,33 +73,50 @@ module.exports = async (req, res) => {
     
     console.log(`[INFO] Processing request with ${images.length} images`);
     
-    // Get the first image (for Kling model, we only need one image)
-    const inputImage = images[0];
+    // Get the first image (for Kling model start image)
+    const startImage = images[0];
+    
+    // Get the second image if available (for Kling model tail image)
+    const tailImage = images.length >= 2 ? images[1] : null;
     
     // Validate image format
-    if (!inputImage) {
+    if (!startImage) {
       console.log('[ERROR] Invalid image data provided - null or undefined image');
       return res.status(400).json({ error: 'Invalid image data provided' });
     }
     
     // Default prompt if none provided
     const videoPrompt = prompt || "A cinematic time-lapse showing progression";
+    const videoDuration = duration || 5; // Default to 5 seconds
+    const videoAspectRatio = aspectRatio || "16:9"; // Default aspect ratio
     
     // Log a small part of the image to verify format
     try {
-      console.log('[DEBUG] Image format check (first 30 chars):', typeof inputImage === 'string' ? inputImage.substring(0, 30) : typeof inputImage);
-      console.log('[DEBUG] Image length:', typeof inputImage === 'string' ? inputImage.length : 'not a string');
+      console.log('[DEBUG] Start image format check (first 30 chars):', typeof startImage === 'string' ? startImage.substring(0, 30) : typeof startImage);
+      if (tailImage) {
+        console.log('[DEBUG] Tail image format check (first 30 chars):', typeof tailImage === 'string' ? tailImage.substring(0, 30) : typeof tailImage);
+      }
       console.log('[DEBUG] Using prompt:', videoPrompt);
+      if (negativePrompt) {
+        console.log('[DEBUG] Using negative prompt:', negativePrompt);
+      }
+      console.log('[DEBUG] Using duration:', videoDuration);
+      console.log('[DEBUG] Using aspect ratio:', videoAspectRatio);
     } catch (e) {
       console.error('[ERROR] Error checking image format:', e.message);
       return res.status(400).json({ error: 'Invalid image format: ' + e.message });
     }
     
     // Validate base64 images
-    if (typeof inputImage === 'string' && inputImage.startsWith('data:')) {
-      if (!isValidBase64Image(inputImage)) {
-        console.log('[ERROR] Invalid base64 image format');
-        return res.status(400).json({ error: 'Invalid image format. Image must be a valid base64 encoded JPG or PNG.' });
+    if (typeof startImage === 'string' && startImage.startsWith('data:')) {
+      if (!isValidBase64Image(startImage)) {
+        console.log('[ERROR] Invalid base64 image format for start image');
+        return res.status(400).json({ error: 'Invalid image format. Start image must be a valid base64 encoded JPG or PNG.' });
+      }
+      
+      if (tailImage && typeof tailImage === 'string' && tailImage.startsWith('data:') && !isValidBase64Image(tailImage)) {
+        console.log('[ERROR] Invalid base64 image format for tail image');
+        return res.status(400).json({ error: 'Invalid image format. Tail image must be a valid base64 encoded JPG or PNG.' });
       }
     }
     
@@ -119,12 +136,13 @@ module.exports = async (req, res) => {
     }
     
     try {
-      // Use the Kling 1.6 Image to Video model instead
+      // Use the Kling 1.6 Image to Video model
       const falEndpoint = 'https://api.fal.ai/models/fal-ai/kling-video/v1.6/pro/image-to-video';
       console.log('[INFO] Using FAL.ai endpoint:', falEndpoint);
       
       // Determine if image is URL or base64 data
-      const isBase64 = typeof inputImage === 'string' && inputImage.startsWith('data:');
+      const isStartBase64 = typeof startImage === 'string' && startImage.startsWith('data:');
+      const isTailBase64 = tailImage && typeof tailImage === 'string' && tailImage.startsWith('data:');
       
       // Create a unique request ID
       const requestId = generateUUID();
@@ -132,17 +150,33 @@ module.exports = async (req, res) => {
       // Prepare payload according to Kling model documentation
       let payload = {
         prompt: videoPrompt,
-        image_url: null, // We'll set this based on the image type
+        duration: videoDuration.toString(),
+        aspect_ratio: videoAspectRatio
       };
       
-      // Add image according to whether it's URL or base64 data
-      if (isBase64) {
-        console.log('[INFO] Using base64 image format');
-        payload.image = inputImage; // For base64, use 'image' field
-        delete payload.image_url; // Remove the null field
+      // Add negative prompt if provided
+      if (negativePrompt && negativePrompt.trim() !== '') {
+        payload.negative_prompt = negativePrompt;
+      }
+      
+      // Add start image according to whether it's URL or base64 data
+      if (isStartBase64) {
+        console.log('[INFO] Using base64 image format for start image');
+        payload.image = startImage; // For base64, use 'image' field
       } else {
-        console.log('[INFO] Using URL image format');
-        payload.image_url = inputImage;
+        console.log('[INFO] Using URL image format for start image');
+        payload.image_url = startImage;
+      }
+      
+      // Add tail image if available
+      if (tailImage) {
+        if (isTailBase64) {
+          console.log('[INFO] Using base64 image format for tail image');
+          payload.tail_image = tailImage; // For base64, use 'tail_image' field
+        } else {
+          console.log('[INFO] Using URL image format for tail image');
+          payload.tail_image_url = tailImage;
+        }
       }
       
       console.log('[INFO] Prepared payload with request ID:', requestId);
