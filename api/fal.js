@@ -1,5 +1,4 @@
 const axios = require('axios');
-const https = require('https');
 
 module.exports = async (req, res) => {
   // Enable CORS
@@ -31,13 +30,6 @@ module.exports = async (req, res) => {
     
     console.log(`Processing request with ${images.length} images`);
     
-    // Create custom HTTPS agent with longer timeout and keepAlive
-    const agent = new https.Agent({
-      keepAlive: true,
-      timeout: 60000,
-      rejectUnauthorized: false
-    });
-    
     // FAL.ai endpoint
     const falEndpoint = 'https://api.fal.ai/models/fal-ai/vidu/start-end-to-video';
     
@@ -60,12 +52,10 @@ module.exports = async (req, res) => {
       'Accept': 'application/json'
     };
     
-    // Make the API request with increased timeout and custom agent
+    // Make the API request
     const response = await axios.post(falEndpoint, payload, { 
       headers,
-      timeout: 180000, // 3 minute timeout
-      httpsAgent: agent,
-      proxy: false // Bypass any system proxy
+      timeout: 30000 // 30 second timeout
     });
     
     console.log('FAL.ai response received successfully');
@@ -86,27 +76,13 @@ module.exports = async (req, res) => {
   } catch (error) {
     console.error('Error in proxy request:', error.message);
     
-    if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
-      return res.status(503).json({
-        error: true,
-        message: 'DNS resolution failed. Cannot connect to FAL.ai API. Please try again later.'
-      });
-    }
-    
-    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
-      return res.status(504).json({
-        error: true,
-        message: 'Connection to FAL.ai API timed out. Please try again later.'
-      });
-    }
-    
     if (error.response) {
       // The request was made and the server responded with a status code
       // outside of the range of 2xx
       console.error('Error response data:', error.response.data);
       return res.status(error.response.status).json({
         error: true,
-        message: error.response.data
+        message: error.response.data.message || 'API error'
       });
     } else if (error.request) {
       // The request was made but no response was received

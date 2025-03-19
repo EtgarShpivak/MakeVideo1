@@ -2,58 +2,11 @@
   "name": "makevideo",
   "private": true,
   "version": "0.0.0",
-  "type": "commonjs",
-  "main": "server.js",
+  "type": "module",
   "scripts": {
-  "dev": "vite",
-  "build": "tsc && vite build",
-  "preview": "vite preview",
-  "vercel-build": "npm run build",
-  "server": "node server.js",
-    "start": "concurrently \"npm run server\" \"npm run dev\"",
-    "build:all": "npm run build && npm run server",
-    "proxy": "ts-node --esm src/server/proxyServer.ts",
-    "dev:full": "concurrently \"npm run proxy\" \"npm run dev\"",
-    "electron:dev": "concurrently \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder",
-    "electron:preview": "electron ."
-  },
-  "build": {
-    "appId": "com.barmitzvah.videogenerator",
-    "productName": "Bar Mitzvah Video Generator",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
-    ],
-    "win": {
-      "target": "nsis"
-    },
-    "mac": {
-      "target": "dmg"
-    },
-    "linux": {
-      "target": "AppImage"
-    }
-  },
-  "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/react": "^18.2.55",
-    "@types/react-dom": "^18.2.19",
-    "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
-    "electron": "^35.0.2",
-    "electron-builder": "^25.1.8",
-    "electron-is-dev": "^3.0.1",
-    "ts-node": "^10.9.2",
-    "typescript": "~5.7.2",
-    "vite": "^6.2.0",
-    "vite-plugin-electron": "^0.29.0",
-    "wait-on": "^7.2.0"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "^11.11.3",
@@ -62,12 +15,15 @@
     "@mui/material": "^5.15.10",
     "axios": "^1.6.7",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "jszip": "^3.10.1",
-    "multer": "^1.4.5-lts.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-dropzone": "^14.3.8",
-    "https": "^1.0.0"
+    "react-dropzone": "^14.3.8"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.7.2",
+    "vite": "^6.2.0"
   }
 }
