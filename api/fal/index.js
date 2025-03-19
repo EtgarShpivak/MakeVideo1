@@ -1,3 +1,4 @@
+// Standard Vercel API route structure
 const axios = require('axios');
 
 module.exports = async (req, res) => {
@@ -24,13 +25,13 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'API key is required' });
     }
     
-    if (images.length < 2) {
+    if (!images || images.length < 2) {
       return res.status(400).json({ error: 'At least 2 images are required' });
     }
     
-    console.log(`Proxying request to FAL.ai with ${images.length} images`);
+    console.log(`Processing request with ${images.length} images`);
     
-    // FAL.ai API endpoint
+    // FAL.ai endpoint
     const falEndpoint = 'https://api.fal.ai/models/fal-ai/vidu/start-end-to-video';
     
     // First and last image from the array
@@ -44,19 +45,24 @@ module.exports = async (req, res) => {
       video_length: 5
     };
     
+    console.log('Sending request to FAL.ai...');
+    
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Key ${apiKey}`,
       'Accept': 'application/json'
     };
     
+    // Make the API request
     const response = await axios.post(falEndpoint, payload, { 
       headers,
-      timeout: 180000, // 3 minute timeout
+      timeout: 30000 // 30 second timeout
     });
     
+    console.log('FAL.ai response received successfully');
+    
     if (response.data && response.data.video_url) {
-      return res.status(200).json({ 
+      return res.json({ 
         output: { 
           video: response.data.video_url 
         } 
@@ -71,9 +77,27 @@ module.exports = async (req, res) => {
   } catch (error) {
     console.error('Error in proxy request:', error.message);
     
-    return res.status(500).json({
-      error: true,
-      message: error.message || 'Error connecting to FAL.ai API'
-    });
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // outside of the range of 2xx
+      console.error('Error response data:', error.response.data);
+      return res.status(error.response.status).json({
+        error: true,
+        message: error.response.data.message || 'API error'
+      });
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received');
+      return res.status(500).json({
+        error: true,
+        message: 'No response received from FAL.ai API'
+      });
+    } else {
+      // Something happened in setting up the request
+      return res.status(500).json({
+        error: true,
+        message: error.message
+      });
+    }
   }
 };
