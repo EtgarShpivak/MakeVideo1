@@ -17,6 +17,27 @@ import InfoIcon from '@mui/icons-material/Info';
 import { useApp } from '../context/AppContext';
 import falService from '../api/falService';
 
+// Helper function to convert a blob URL to a base64 string
+const blobUrlToBase64 = async (blobUrl: string): Promise<string> => {
+  try {
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting blob URL to base64:', error);
+    throw new Error('Failed to convert image format');
+  }
+};
+
 const VideoGenerator: React.FC = () => {
   const { images } = useApp();
   const [apiKey, setApiKey] = useState('');
@@ -68,16 +89,22 @@ const VideoGenerator: React.FC = () => {
     // Stage 1: Preparing
     setTimeout(() => {
       setLoadingProgress(10);
-      setLoadingMessage('Sending request to FAL.ai...');
+      setLoadingMessage('Converting images to base64...');
     }, 1000);
     
     // Stage 2: Sending
     setTimeout(() => {
       setLoadingProgress(20);
-      setLoadingMessage('Generating video (this may take up to 1-3 minutes)...');
+      setLoadingMessage('Sending request to FAL.ai...');
     }, 3000);
     
-    // Stage 3-9: Processing
+    // Stage 3: Processing
+    setTimeout(() => {
+      setLoadingProgress(30);
+      setLoadingMessage('Generating video (this may take up to 1-3 minutes)...');
+    }, 5000);
+    
+    // Stage 4-9: Processing
     const interval = setInterval(() => {
       setLoadingProgress(prev => {
         if (prev >= 90) {
@@ -109,35 +136,54 @@ const VideoGenerator: React.FC = () => {
       setAttemptCount(prev => prev + 1);
       const clearProgress = startProgressSimulation();
       
-      const imageBase64Array = images.map(img => img.preview);
-      
-      // Set timeouts for user feedback
-      const timeoutIds = [
-        setTimeout(() => {
-          setLoadingMessage('Still working... The server might be busy. Please be patient.');
-        }, 30000), // 30 seconds
-        setTimeout(() => {
-          setLoadingMessage('This is taking longer than expected. The FAL.ai service might be experiencing high load.');
-        }, 60000), // 1 minute
-        setTimeout(() => {
-          setLoadingMessage('Still trying... Video generation can take up to 3 minutes.');
-        }, 120000), // 2 minutes
-      ];
+      // Convert blob URLs to base64 strings
+      setLoadingMessage('Converting images to proper format...');
       
       try {
-        const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
+        console.log('Original image previews:', images.map(img => img.preview.substring(0, 30)));
         
-        timeoutIds.forEach(clearTimeout);
-        clearProgress();
-        setLoadingProgress(100);
-        setLoadingMessage('Video generated successfully!');
+        // Convert blob URLs to base64
+        const imagePromises = images.map(img => {
+          if (img.preview.startsWith('blob:')) {
+            return blobUrlToBase64(img.preview);
+          }
+          return img.preview;
+        });
         
-        setVideoUrl(videoResult);
-        setSuccess(true);
+        const imageBase64Array = await Promise.all(imagePromises);
+        console.log('Converted images to base64 format');
+        
+        // Set timeouts for user feedback
+        const timeoutIds = [
+          setTimeout(() => {
+            setLoadingMessage('Still working... The server might be busy. Please be patient.');
+          }, 30000), // 30 seconds
+          setTimeout(() => {
+            setLoadingMessage('This is taking longer than expected. The FAL.ai service might be experiencing high load.');
+          }, 60000), // 1 minute
+          setTimeout(() => {
+            setLoadingMessage('Still trying... Video generation can take up to 3 minutes.');
+          }, 120000), // 2 minutes
+        ];
+        
+        try {
+          const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
+          
+          timeoutIds.forEach(clearTimeout);
+          clearProgress();
+          setLoadingProgress(100);
+          setLoadingMessage('Video generated successfully!');
+          
+          setVideoUrl(videoResult);
+          setSuccess(true);
+        } catch (err: any) {
+          timeoutIds.forEach(clearTimeout);
+          clearProgress();
+          throw err;
+        }
       } catch (err: any) {
-        timeoutIds.forEach(clearTimeout);
         clearProgress();
-        throw err;
+        throw new Error(`Error processing images: ${err.message}`);
       }
     } catch (err: any) {
       console.error('Error generating video:', err);
@@ -151,6 +197,8 @@ const VideoGenerator: React.FC = () => {
         errorMessage = 'The request timed out. FAL.ai might be experiencing high load. Please try again later.';
       } else if (errorMessage.includes('API key')) {
         errorMessage = 'Invalid API key. Please check your FAL.ai API key and try again.';
+      } else if (errorMessage.includes('converting') || errorMessage.includes('processing')) {
+        errorMessage = 'Error processing your images. Please try uploading them again or use different images.';
       }
       
       setError(errorMessage);
