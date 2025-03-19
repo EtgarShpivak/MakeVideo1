@@ -60,7 +60,7 @@
     "@emotion/styled": "^11.11.0",
     "@mui/icons-material": "^5.15.10",
     "@mui/material": "^5.15.10",
-    "axios": "^1.8.3",
+    "axios": "^1.6.7",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "jszip": "^3.10.1",

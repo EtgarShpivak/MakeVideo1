@@ -1,59 +1,99 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import https from 'https';
 
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+// Enable CORS
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
 app.use(express.json({ limit: '50mb' }));
 
-// Proxy endpoint for FAL.ai API
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// FAL.ai proxy endpoint
 app.post('/api/fal', async (req, res) => {
   try {
     const { images, apiKey } = req.body;
     
-    console.log('Proxying request to FAL.ai with', images.length, 'images');
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API key is required' });
+    }
     
-    const falEndpoint = 'https://gateway.fal.ai/api/v1/workflows/stable-video-diffusion';
+    if (!images || images.length < 2) {
+      return res.status(400).json({ error: 'At least 2 images are required' });
+    }
+    
+    console.log(`Proxying request to FAL.ai with ${images.length} images`);
+    
+    // Create custom HTTPS agent with longer timeout
+    const agent = new https.Agent({
+      rejectUnauthorized: false,
+      timeout: 60000
+    });
+    
+    // FAL.ai endpoint
+    const falEndpoint = 'https://api.fal.ai/models/fal-ai/vidu/start-end-to-video';
+    
+    // First and last image from the array
+    const startImage = images[0];
+    const finalImage = images[images.length - 1];
     
     const payload = {
-      input: {
-        images: images,
-        motion_bucket_id: 127,
-        fps: 6
-      }
+      start_image: startImage,
+      final_image: finalImage,
+      prompt: "Show a natural transition between these images",
+      video_length: 5
     };
     
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Key ${apiKey}`,
       'Accept': 'application/json'
     };
     
-    const response = await axios.post(falEndpoint, payload, { headers });
+    const response = await axios({
+      method: 'post',
+      url: falEndpoint, 
+      data: payload,
+      headers: headers,
+      httpsAgent: agent,
+      timeout: 180000, // 3 minute timeout
+    });
     
-    console.log('FAL.ai response received successfully');
-    
-    res.json(response.data);
-  } catch (error: any) {
-    console.error('Proxy error with FAL.ai:', error);
-    
-    if (error.response) {
-      res.status(error.response.status).json({
-        error: true,
-        message: error.response.data,
-        status: error.response.status
+    if (response.data && response.data.video_url) {
+      return res.status(200).json({ 
+        output: { 
+          video: response.data.video_url 
+        } 
       });
     } else {
-      res.status(500).json({
+      console.error('Invalid response structure:', response.data);
+      return res.status(500).json({
         error: true,
-        message: error.message
+        message: 'Invalid response structure from FAL.ai API'
       });
     }
+  } catch (error) {
+    console.error('Error in proxy request:', error.message);
+    
+    // Send helpful error message
+    return res.status(500).json({
+      error: true,
+      message: error.message || 'Error connecting to FAL.ai API'
+    });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Proxy server running on http://localhost:${PORT}`);
+  console.log(`Proxy server running at http://localhost:${PORT}`);
 }); 

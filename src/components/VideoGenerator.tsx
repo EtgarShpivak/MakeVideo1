@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import { useApp } from '../context/AppContext';
-import { generateVideo } from '../api/falService';
+import falService from '../api/falService';
 
 const VideoGenerator: React.FC = () => {
   const { images } = useApp();
@@ -37,55 +37,14 @@ const VideoGenerator: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      console.log('Starting video generation process with', images.length, 'images');
+      const imageBase64Array = images.map(img => img.dataURL);
+      const videoResult = await falService.generateVideo(imageBase64Array, apiKey);
       
-      // Convert images to base64 strings
-      const imagePromises = images.map(image => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === 'string') {
-              resolve(reader.result);
-            } else {
-              reject(new Error('Failed to convert image to base64'));
-            }
-          };
-          reader.onerror = () => {
-            reject(new Error('Failed to read image'));
-          };
-          reader.readAsDataURL(image.file);
-        });
-      });
-
-      const base64Images = await Promise.all(imagePromises);
-      
-      console.log('Images converted to base64, sending to API...');
-      
-      // Generate video
-      const result = await generateVideo({
-        images: base64Images,
-        apiKey
-      });
-      
-      setVideoUrl(result.videoUrl);
+      setVideoUrl(videoResult);
       setSuccess(true);
     } catch (err: any) {
       console.error('Error generating video:', err);
-      let errorMessage = 'Failed to generate video';
-      
-      if (err.message === 'Network Error') {
-        errorMessage = 'Network error: Make sure both servers are running. If they are, your network might be blocking access to FAL.ai API. Try using a VPN or a different network.';
-      } else if (err.message && err.message.includes('DNS')) {
-        errorMessage = 'DNS resolution failed: Your network is blocking access to FAL.ai. Try using a VPN or connect to a different network.';
-      } else if (err.response && err.response.status === 401) {
-        errorMessage = 'API Key is invalid or expired. Please check your FAL.ai API key.';
-      } else if (err.response && err.response.data && err.response.data.message) {
-        errorMessage = `API Error: ${err.response.data.message}`;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
-      setError(errorMessage);
+      setError(err.message || 'Failed to generate video');
     } finally {
       setLoading(false);
     }
