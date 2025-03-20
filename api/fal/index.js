@@ -160,7 +160,7 @@ module.exports = async function handler(req, res) {
       const response = await axios.post(FAL_API_URL, requestData, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Key ${apiKey}`
         },
         timeout: 30000,
         validateStatus: (status) => status === 200

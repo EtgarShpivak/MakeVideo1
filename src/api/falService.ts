@@ -114,49 +114,13 @@ export async function generatePrompt(
   }
 
   try {
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-3-sonnet-20240229',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Analyze these two images showing a child at different ages. Focus on physical changes, emotional development, environmental constants, meaningful transition elements, and cinematic techniques that could enhance emotional impact. Create a detailed prompt for an AI video generation model to create a touching transition between these moments.'
-              },
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: image1.replace(/^data:image\/\w+;base64,/, '')
-                }
-              },
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: image2.replace(/^data:image\/\w+;base64,/, '')
-                }
-              }
-            ]
-          }
-        ]
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        }
-      }
-    );
+    const response = await axios.post('/api/claude', {
+      image1: image1.replace(/^data:image\/\w+;base64,/, ''),
+      image2: image2.replace(/^data:image\/\w+;base64,/, ''),
+      apiKey
+    });
 
-    return response.data.content[0].text;
+    return response.data.prompt;
   } catch (error: any) {
     throw new Error(formatErrorMessage(error));
   }
@@ -173,22 +137,12 @@ export async function generateVideo(
   }
 
   try {
-    const response = await axios.post(
-      'https://api.fal.ai/v1/kling-1.6',
-      {
-        prompt,
-        image1: image1.replace(/^data:image\/\w+;base64,/, ''),
-        image2: image2.replace(/^data:image\/\w+;base64,/, ''),
-        duration: 4,
-        aspect_ratio: '16:9'
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Key ${apiKey}`
-        }
-      }
-    );
+    const response = await axios.post('/api/fal', {
+      prompt,
+      image1: image1.replace(/^data:image\/\w+;base64,/, ''),
+      image2: image2.replace(/^data:image\/\w+;base64,/, ''),
+      apiKey
+    });
 
     return { url: response.data.url };
   } catch (error: any) {
