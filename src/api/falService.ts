@@ -92,7 +92,9 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
     });
 
     if (!response.data || !response.data.prompt) {
-      const errorMessage = response.data?.error || 'Invalid response from server';
+      const errorMessage = typeof response.data?.error === 'object' 
+        ? JSON.stringify(response.data.error)
+        : response.data?.error || 'Invalid response from server';
       console.error('Server response error:', errorMessage);
       throw new Error(errorMessage);
     }
@@ -103,12 +105,26 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
     
     // Handle Axios errors
     if (axios.isAxiosError(error)) {
-      const errorMessage = error.response?.data?.error || error.message;
+      const errorData = error.response?.data;
+      let errorMessage = 'Server error';
+      
+      if (errorData) {
+        if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        } else if (typeof errorData.error === 'string') {
+          errorMessage = errorData.error;
+        } else if (typeof errorData.error === 'object') {
+          errorMessage = JSON.stringify(errorData.error);
+        } else if (typeof errorData.message === 'string') {
+          errorMessage = errorData.message;
+        }
+      }
+      
       throw new Error(errorMessage);
     }
     
     // Handle other errors
-    throw error instanceof Error ? error : new Error('Failed to generate prompt');
+    throw new Error(error instanceof Error ? error.message : 'Failed to generate prompt');
   }
 };
 
