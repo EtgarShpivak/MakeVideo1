@@ -69,27 +69,68 @@ interface ImageData {
 }
 
 interface ApiError {
-  error?: string;
+  error?: string | { message?: string };
   message?: string;
+  status?: number;
+  response?: {
+    data?: any;
+    status?: number;
+  };
 }
 
-const handleApiError = (error: unknown): string => {
+const formatErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
     const apiError = error.response?.data as ApiError;
-    if (apiError?.error) return apiError.error;
-    if (apiError?.message) return apiError.message;
-    if (error.response?.status === 500) return 'Internal server error';
-    if (error.response?.status === 401) return 'Invalid API key';
-    if (error.response?.status === 403) return 'API key does not have required permissions';
-    return error.message || 'API request failed';
+    
+    // Handle structured error objects
+    if (apiError?.error && typeof apiError.error === 'object') {
+      return apiError.error.message || 'Unknown API error';
+    }
+    
+    // Handle string error messages
+    if (apiError?.error && typeof apiError.error === 'string') {
+      return apiError.error;
+    }
+    
+    // Handle direct message property
+    if (apiError?.message) {
+      return apiError.message;
+    }
+
+    // Handle HTTP status codes
+    if (error.response?.status) {
+      switch (error.response.status) {
+        case 400: return 'Invalid request parameters';
+        case 401: return 'Invalid API key';
+        case 403: return 'API key does not have required permissions';
+        case 429: return 'Too many requests. Please try again later.';
+        case 500: return 'Internal server error';
+        case 502: return 'API server is temporarily unavailable';
+        case 504: return 'Request timeout';
+        default: return `Server error (${error.response.status})`;
+      }
+    }
+
+    if (error.code === 'ECONNABORTED') {
+      return 'Request timed out. Please try again.';
+    }
+
+    return error.message || 'Failed to connect to server';
   }
+
   if (error instanceof Error) {
     return error.message;
   }
-  if (typeof error === 'string') {
-    return error;
+
+  if (typeof error === 'object' && error !== null) {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'An error occurred while processing the request';
+    }
   }
-  return 'An unexpected error occurred';
+
+  return String(error || 'An unknown error occurred');
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -118,6 +159,10 @@ export const generatePrompt = async (
       throw new Error('API key is required');
     }
 
+    if (!apiKey.startsWith('sk-')) {
+      throw new Error('Invalid Claude API key format');
+    }
+
     const response = await axios.post(
       CLAUDE_API_ENDPOINT,
       { image1, image2, apiKey },
@@ -126,6 +171,7 @@ export const generatePrompt = async (
           'Content-Type': 'application/json',
         },
         timeout: 30000,
+        validateStatus: (status) => status === 200,
       }
     );
 
@@ -136,7 +182,7 @@ export const generatePrompt = async (
     return response.data.prompt;
   } catch (error) {
     console.error('Error generating prompt:', error);
-    throw new Error(handleApiError(error));
+    throw new Error(formatErrorMessage(error));
   }
 };
 
@@ -175,6 +221,7 @@ export const generateVideo = async (
           'Content-Type': 'application/json',
         },
         timeout: 30000,
+        validateStatus: (status) => status === 200,
       }
     );
 
@@ -185,7 +232,7 @@ export const generateVideo = async (
     return response.data.videoUrl;
   } catch (error) {
     console.error('Error generating video:', error);
-    throw new Error(handleApiError(error));
+    throw new Error(formatErrorMessage(error));
   }
 };
 

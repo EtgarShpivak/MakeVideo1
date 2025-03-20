@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Button, TextField, Typography, Paper, CircularProgress, Grid, Alert, List, ListItem, ListItemText, ListItemSecondaryAction, IconButton } from '@mui/material';
 import { Download, Refresh } from '@mui/icons-material';
 import { generateVideo, generatePrompt } from '../api/falService';
@@ -14,6 +14,37 @@ interface ImageData {
   data: string;
   type: string;
 }
+
+interface DiagnosticError {
+  name?: string;
+  message: string;
+  stack?: string;
+  details?: any;
+}
+
+const formatDiagnosticInfo = (error: unknown): DiagnosticError => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const errorObj = error as any;
+    return {
+      name: errorObj.name || 'UnknownError',
+      message: errorObj.message || JSON.stringify(error),
+      details: error,
+    };
+  }
+
+  return {
+    name: 'UnknownError',
+    message: String(error),
+  };
+};
 
 const fileToImageData = async (file: File): Promise<ImageData> => {
   return new Promise((resolve, reject) => {
@@ -43,7 +74,18 @@ export const VideoGenerator: React.FC = () => {
   const [falApiKey, setFalApiKey] = useState('');
   const [testMode, setTestMode] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
+  const [diagnosticInfo, setDiagnosticInfo] = useState<DiagnosticError | null>(null);
+  const [generatingPrompts, setGeneratingPrompts] = useState(false);
+  const [generatingVideos, setGeneratingVideos] = useState(false);
+
+  const handleError = useCallback((err: unknown, context: string) => {
+    console.error(`Error ${context}:`, err);
+    const formattedError = formatDiagnosticInfo(err);
+    setError(formattedError.message);
+    if (showDiagnostics) {
+      setDiagnosticInfo(formattedError);
+    }
+  }, [showDiagnostics]);
 
   const handleGeneratePrompts = async () => {
     if (!claudeApiKey) {
@@ -56,9 +98,11 @@ export const VideoGenerator: React.FC = () => {
       return;
     }
 
+    setGeneratingPrompts(true);
     setLoading(true);
     setError(null);
     setDiagnosticInfo(null);
+    setPrompts([]);  // Clear existing prompts
 
     try {
       const newPrompts: Prompt[] = [];
@@ -84,16 +128,9 @@ export const VideoGenerator: React.FC = () => {
       }
       setPrompts(newPrompts);
     } catch (err) {
-      console.error('Error generating prompts:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate prompts');
-      if (showDiagnostics) {
-        setDiagnosticInfo({
-          error: err,
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined
-        });
-      }
+      handleError(err, 'generating prompts');
     } finally {
+      setGeneratingPrompts(false);
       setLoading(false);
     }
   };
@@ -114,15 +151,19 @@ export const VideoGenerator: React.FC = () => {
       return;
     }
 
+    setGeneratingVideos(true);
     setLoading(true);
     setError(null);
     setDiagnosticInfo(null);
+    setVideos([]);  // Clear existing videos
 
     try {
       const newVideos: string[] = [];
       for (let i = 0; i < images.length - 1; i++) {
         const prompt = prompts.find(p => p.fromImage === i + 1 && p.toImage === i + 2)?.text;
-        if (!prompt) continue;
+        if (!prompt) {
+          throw new Error(`No prompt found for images ${i + 1} → ${i + 2}`);
+        }
 
         const image1Data = await fileToImageData(images[i].file);
         const image2Data = await fileToImageData(images[i + 1].file);
@@ -142,28 +183,24 @@ export const VideoGenerator: React.FC = () => {
       }
       setVideos(newVideos);
     } catch (err) {
-      console.error('Error generating videos:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate videos');
-      if (showDiagnostics) {
-        setDiagnosticInfo({
-          error: err,
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined
-        });
-      }
+      handleError(err, 'generating videos');
     } finally {
+      setGeneratingVideos(false);
       setLoading(false);
     }
   };
 
-  const handleDownload = (url: string, index: number) => {
+  const handleDownload = useCallback((url: string, index: number) => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `video-${index + 1}.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  };
+  }, []);
+
+  const isGeneratePromptsDisabled = loading || images.length < 2 || generatingPrompts;
+  const isGenerateVideosDisabled = loading || prompts.length === 0 || generatingVideos || generatingPrompts;
 
   return (
     <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
@@ -177,6 +214,7 @@ export const VideoGenerator: React.FC = () => {
               value={claudeApiKey}
               onChange={(e) => setClaudeApiKey(e.target.value)}
               margin="normal"
+              disabled={loading}
             />
           </Grid>
           <Grid item xs={12} md={6}>
@@ -187,6 +225,7 @@ export const VideoGenerator: React.FC = () => {
               value={falApiKey}
               onChange={(e) => setFalApiKey(e.target.value)}
               margin="normal"
+              disabled={loading}
             />
           </Grid>
         </Grid>
@@ -197,29 +236,30 @@ export const VideoGenerator: React.FC = () => {
           </Alert>
         )}
 
-        <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+        <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <Button
             variant="contained"
             onClick={handleGeneratePrompts}
-            disabled={loading || images.length < 2}
-            startIcon={loading ? <CircularProgress size={20} /> : <Refresh />}
+            disabled={isGeneratePromptsDisabled}
+            startIcon={generatingPrompts ? <CircularProgress size={20} /> : <Refresh />}
           >
-            Generate Prompts
+            {generatingPrompts ? 'Generating Prompts...' : 'Generate Prompts'}
           </Button>
 
           <Button
             variant="contained"
             onClick={handleGenerateVideos}
-            disabled={loading || prompts.length === 0}
-            startIcon={loading ? <CircularProgress size={20} /> : <Refresh />}
+            disabled={isGenerateVideosDisabled}
+            startIcon={generatingVideos ? <CircularProgress size={20} /> : <Refresh />}
           >
-            Generate Videos
+            {generatingVideos ? 'Generating Videos...' : 'Generate Videos'}
           </Button>
 
           <Button
             variant="outlined"
             onClick={() => setTestMode(!testMode)}
             color={testMode ? 'success' : 'primary'}
+            disabled={loading}
           >
             {testMode ? 'Test Mode: ON' : 'Test Mode: OFF'}
           </Button>
@@ -227,6 +267,7 @@ export const VideoGenerator: React.FC = () => {
           <Button
             variant="outlined"
             onClick={() => setShowDiagnostics(!showDiagnostics)}
+            disabled={loading}
           >
             {showDiagnostics ? 'Hide Diagnostics' : 'Show Diagnostics'}
           </Button>
@@ -266,6 +307,7 @@ export const VideoGenerator: React.FC = () => {
                     <IconButton
                       edge="end"
                       onClick={() => handleDownload(url, index)}
+                      disabled={loading}
                     >
                       <Download />
                     </IconButton>
@@ -277,14 +319,19 @@ export const VideoGenerator: React.FC = () => {
         )}
 
         {showDiagnostics && diagnosticInfo && (
-          <Box sx={{ mt: 3 }}>
+          <Paper sx={{ mt: 3, p: 2, backgroundColor: '#f5f5f5' }}>
             <Typography variant="h6" gutterBottom>
               Diagnostic Information
             </Typography>
-            <pre style={{ overflow: 'auto', maxHeight: '200px' }}>
+            <pre style={{ 
+              whiteSpace: 'pre-wrap', 
+              wordWrap: 'break-word',
+              fontSize: '0.875rem',
+              fontFamily: 'monospace'
+            }}>
               {JSON.stringify(diagnosticInfo, null, 2)}
             </pre>
-          </Box>
+          </Paper>
         )}
       </Paper>
     </Box>
