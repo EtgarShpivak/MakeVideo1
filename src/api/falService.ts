@@ -198,4 +198,5 @@ export async function generateVideo(
 
 export default {
   generateVideo,
+  generatePrompt,
 };
