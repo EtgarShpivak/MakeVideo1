@@ -9,9 +9,8 @@ interface VideoGenerationParams {
   aspectRatio?: string;
 }
 
-interface VideoResponse {
-  videoUrl: string;
-  status: string;
+export interface VideoResponse {
+  url: string;
 }
 
 interface GenerateVideoOptions {
@@ -69,68 +68,28 @@ interface ImageData {
 }
 
 interface ApiError {
-  error?: string | { message?: string };
-  message?: string;
+  message: string;
   status?: number;
-  response?: {
-    data?: any;
-    status?: number;
-  };
 }
 
-const formatErrorMessage = (error: unknown): string => {
+const formatErrorMessage = (error: any): string => {
   if (axios.isAxiosError(error)) {
-    const apiError = error.response?.data as ApiError;
+    const status = error.response?.status;
+    const message = error.response?.data?.error?.message || error.message;
     
-    // Handle structured error objects
-    if (apiError?.error && typeof apiError.error === 'object') {
-      return apiError.error.message || 'Unknown API error';
-    }
-    
-    // Handle string error messages
-    if (apiError?.error && typeof apiError.error === 'string') {
-      return apiError.error;
-    }
-    
-    // Handle direct message property
-    if (apiError?.message) {
-      return apiError.message;
-    }
-
-    // Handle HTTP status codes
-    if (error.response?.status) {
-      switch (error.response.status) {
-        case 400: return 'Invalid request parameters';
-        case 401: return 'Invalid API key';
-        case 403: return 'API key does not have required permissions';
-        case 429: return 'Too many requests. Please try again later.';
-        case 500: return 'Internal server error';
-        case 502: return 'API server is temporarily unavailable';
-        case 504: return 'Request timeout';
-        default: return `Server error (${error.response.status})`;
-      }
-    }
-
-    if (error.code === 'ECONNABORTED') {
-      return 'Request timed out. Please try again.';
-    }
-
-    return error.message || 'Failed to connect to server';
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return 'An error occurred while processing the request';
+    switch (status) {
+      case 401:
+        return 'Invalid API key';
+      case 429:
+        return 'Rate limit exceeded. Please try again later.';
+      case 500:
+        return 'Server error. Please try again later.';
+      default:
+        return `API Error: ${message}`;
     }
   }
-
-  return String(error || 'An unknown error occurred');
+  
+  return error.message || 'An unexpected error occurred';
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -145,96 +104,97 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-export const generatePrompt = async (
-  image1: ImageData,
-  image2: ImageData,
+export async function generatePrompt(
+  image1: string,
+  image2: string,
   apiKey: string
-): Promise<string> => {
+): Promise<string> {
+  if (!image1 || !image2 || !apiKey) {
+    throw new Error('Missing required parameters');
+  }
+
   try {
-    if (!image1?.data || !image2?.data) {
-      throw new Error('Invalid image data');
-    }
-
-    if (!apiKey) {
-      throw new Error('API key is required');
-    }
-
-    if (!apiKey.startsWith('sk-')) {
-      throw new Error('Invalid Claude API key format');
-    }
-
     const response = await axios.post(
-      CLAUDE_API_ENDPOINT,
-      { image1, image2, apiKey },
+      'https://api.anthropic.com/v1/messages',
+      {
+        model: 'claude-3-sonnet-20240229',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Analyze these two images showing a child at different ages. Focus on physical changes, emotional development, environmental constants, meaningful transition elements, and cinematic techniques that could enhance emotional impact. Create a detailed prompt for an AI video generation model to create a touching transition between these moments.'
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: image1.replace(/^data:image\/\w+;base64,/, '')
+                }
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: image2.replace(/^data:image\/\w+;base64,/, '')
+                }
+              }
+            ]
+          }
+        ]
+      },
       {
         headers: {
           'Content-Type': 'application/json',
-        },
-        timeout: 30000,
-        validateStatus: (status) => status === 200,
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        }
       }
     );
 
-    if (!response.data?.prompt) {
-      throw new Error('Invalid response from Claude API');
-    }
-
-    return response.data.prompt;
-  } catch (error) {
-    console.error('Error generating prompt:', error);
+    return response.data.content[0].text;
+  } catch (error: any) {
     throw new Error(formatErrorMessage(error));
   }
-};
+}
 
-export const generateVideo = async (
+export async function generateVideo(
   prompt: string,
-  image1: ImageData,
-  image2: ImageData,
+  image1: string,
+  image2: string,
   apiKey: string
-): Promise<string> => {
+): Promise<VideoResponse> {
+  if (!prompt || !image1 || !image2 || !apiKey) {
+    throw new Error('Missing required parameters');
+  }
+
   try {
-    if (!prompt) {
-      throw new Error('Prompt is required');
-    }
-
-    if (!image1?.data || !image2?.data) {
-      throw new Error('Invalid image data');
-    }
-
-    if (!apiKey) {
-      throw new Error('API key is required');
-    }
-
     const response = await axios.post(
-      FAL_API_ENDPOINT,
-      { 
-        prompt, 
-        image1, 
-        image2, 
-        apiKey,
-        model: 'kling-1.6',
+      'https://api.fal.ai/v1/kling-1.6',
+      {
+        prompt,
+        image1: image1.replace(/^data:image\/\w+;base64,/, ''),
+        image2: image2.replace(/^data:image\/\w+;base64,/, ''),
         duration: 4,
         aspect_ratio: '16:9'
       },
       {
         headers: {
           'Content-Type': 'application/json',
-        },
-        timeout: 30000,
-        validateStatus: (status) => status === 200,
+          'Authorization': `Key ${apiKey}`
+        }
       }
     );
 
-    if (!response.data?.videoUrl) {
-      throw new Error('Invalid response from FAL API');
-    }
-
-    return response.data.videoUrl;
-  } catch (error) {
-    console.error('Error generating video:', error);
+    return { url: response.data.url };
+  } catch (error: any) {
     throw new Error(formatErrorMessage(error));
   }
-};
+}
 
 export default {
   generateVideo,

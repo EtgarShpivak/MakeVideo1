@@ -64,7 +64,13 @@ const fileToImageData = async (file: File): Promise<ImageData> => {
   });
 };
 
-export const VideoGenerator: React.FC = () => {
+interface VideoGeneratorProps {
+  image1: string | null;
+  image2: string | null;
+  onReset: () => void;
+}
+
+export default function VideoGenerator({ image1, image2, onReset }: VideoGeneratorProps) {
   const { images } = useApp();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [videos, setVideos] = useState<string[]>([]);
@@ -77,6 +83,8 @@ export const VideoGenerator: React.FC = () => {
   const [diagnosticInfo, setDiagnosticInfo] = useState<DiagnosticError | null>(null);
   const [generatingPrompts, setGeneratingPrompts] = useState(false);
   const [generatingVideos, setGeneratingVideos] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
 
   const handleError = useCallback((err: unknown, context: string) => {
     console.error(`Error ${context}:`, err);
@@ -201,6 +209,49 @@ export const VideoGenerator: React.FC = () => {
 
   const isGeneratePromptsDisabled = loading || images.length < 2 || generatingPrompts;
   const isGenerateVideosDisabled = loading || prompts.length === 0 || generatingVideos || generatingPrompts;
+
+  const handleGeneratePrompt = useCallback(async () => {
+    if (!image1 || !image2 || !claudeApiKey) {
+      setError('Please provide both images and a Claude API key');
+      return;
+    }
+
+    setError('');
+    setGeneratingPrompts(true);
+    try {
+      const generatedPrompt = await generatePrompt(image1, image2, claudeApiKey);
+      setPrompt(generatedPrompt);
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate prompt');
+    } finally {
+      setGeneratingPrompts(false);
+    }
+  }, [image1, image2, claudeApiKey]);
+
+  const handleGenerateVideo = useCallback(async () => {
+    if (!prompt || !falApiKey) {
+      setError('Please generate a prompt and provide a FAL API key first');
+      return;
+    }
+
+    setError('');
+    setGeneratingVideos(true);
+    try {
+      const video = await generateVideo(prompt, image1!, image2!, falApiKey);
+      setVideoUrl(video.url);
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate video');
+    } finally {
+      setGeneratingVideos(false);
+    }
+  }, [prompt, image1, image2, falApiKey]);
+
+  const handleReset = useCallback(() => {
+    setPrompt('');
+    setVideoUrl('');
+    setError('');
+    onReset();
+  }, [onReset]);
 
   return (
     <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
@@ -333,7 +384,44 @@ export const VideoGenerator: React.FC = () => {
             </pre>
           </Paper>
         )}
+
+        {prompt && (
+          <>
+            <Typography variant="h6">Generated Prompt:</Typography>
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>{prompt}</Typography>
+            
+            <TextField
+              label="FAL API Key"
+              value={falApiKey}
+              onChange={(e) => setFalApiKey(e.target.value)}
+              type="password"
+              fullWidth
+            />
+
+            <Button
+              variant="contained"
+              onClick={handleGenerateVideo}
+              disabled={!prompt || !falApiKey || generatingVideos}
+              startIcon={generatingVideos ? <CircularProgress size={20} /> : null}
+            >
+              {generatingVideos ? 'Generating Video...' : 'Generate Video'}
+            </Button>
+          </>
+        )}
+
+        {videoUrl && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="h6">Generated Video:</Typography>
+            <video controls src={videoUrl} style={{ width: '100%', maxWidth: '100%' }} />
+          </Box>
+        )}
+
+        {(prompt || videoUrl) && (
+          <Button variant="outlined" onClick={handleReset}>
+            Start Over
+          </Button>
+        )}
       </Paper>
     </Box>
   );
-}; 
+} 
