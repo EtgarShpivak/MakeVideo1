@@ -59,13 +59,26 @@ interface FalRequest {
   aspect_ratio: string;
 }
 
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = reader.result as string;
+      resolve(base64String); // Send the complete data URL
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
 export const generatePrompt = async (image1: File, image2: File, claudeApiKey: string): Promise<string> => {
   try {
-    // Convert images to base64
+    console.log('Converting images to base64...');
     const image1Base64 = await fileToBase64(image1);
     const image2Base64 = await fileToBase64(image2);
+    console.log('Images converted successfully');
 
-    // Call our proxy endpoint instead of Claude API directly
+    console.log('Sending request to server...');
     const response = await axios.post(`${PROXY_BASE_URL}/claude`, {
       image1: {
         type: image1.type,
@@ -79,14 +92,17 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
     });
 
     if (!response.data || !response.data.prompt) {
+      console.error('Invalid server response:', response.data);
       throw new Error('Invalid response from server');
     }
 
     return response.data.prompt;
   } catch (error) {
+    console.error('Error in generatePrompt:', error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        throw new Error(`Server error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        const errorMessage = error.response.data?.error || error.response.data?.message || 'Server error';
+        throw new Error(`Server error: ${error.response.status} - ${errorMessage}`);
       } else if (error.request) {
         throw new Error('No response received from server. Please check your internet connection.');
       }
@@ -134,19 +150,6 @@ export const generateVideo = async (
     }
     throw new Error('Failed to generate video');
   }
-};
-
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const base64String = reader.result as string;
-      // Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
-      resolve(base64String.split(',')[1]);
-    };
-    reader.onerror = error => reject(error);
-  });
 };
 
 export default {
