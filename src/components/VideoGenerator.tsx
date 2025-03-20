@@ -66,6 +66,15 @@ export const VideoGenerator: React.FC = () => {
         const image1Data = await fileToImageData(images[i].file);
         const image2Data = await fileToImageData(images[i + 1].file);
         
+        if (testMode) {
+          newPrompts.push({
+            fromImage: i + 1,
+            toImage: i + 2,
+            text: "Test prompt for video generation"
+          });
+          continue;
+        }
+        
         const prompt = await generatePrompt(image1Data, image2Data, claudeApiKey);
         newPrompts.push({
           fromImage: i + 1,
@@ -77,7 +86,13 @@ export const VideoGenerator: React.FC = () => {
     } catch (err) {
       console.error('Error generating prompts:', err);
       setError(err instanceof Error ? err.message : 'Failed to generate prompts');
-      setDiagnosticInfo(err);
+      if (showDiagnostics) {
+        setDiagnosticInfo({
+          error: err,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -112,6 +127,11 @@ export const VideoGenerator: React.FC = () => {
         const image1Data = await fileToImageData(images[i].file);
         const image2Data = await fileToImageData(images[i + 1].file);
 
+        if (testMode) {
+          newVideos.push(`https://example.com/test-video-${i + 1}.mp4`);
+          continue;
+        }
+
         const videoUrl = await generateVideo(
           prompt,
           image1Data,
@@ -124,7 +144,13 @@ export const VideoGenerator: React.FC = () => {
     } catch (err) {
       console.error('Error generating videos:', err);
       setError(err instanceof Error ? err.message : 'Failed to generate videos');
-      setDiagnosticInfo(err);
+      if (showDiagnostics) {
+        setDiagnosticInfo({
+          error: err,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined
+        });
+      }
     } finally {
       setLoading(false);
     }

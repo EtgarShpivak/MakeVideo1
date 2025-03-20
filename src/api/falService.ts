@@ -76,10 +76,18 @@ interface ApiError {
 const handleApiError = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
     const apiError = error.response?.data as ApiError;
-    return apiError?.error || apiError?.message || error.message || 'API request failed';
+    if (apiError?.error) return apiError.error;
+    if (apiError?.message) return apiError.message;
+    if (error.response?.status === 500) return 'Internal server error';
+    if (error.response?.status === 401) return 'Invalid API key';
+    if (error.response?.status === 403) return 'API key does not have required permissions';
+    return error.message || 'API request failed';
   }
   if (error instanceof Error) {
     return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
   }
   return 'An unexpected error occurred';
 };
@@ -102,6 +110,14 @@ export const generatePrompt = async (
   apiKey: string
 ): Promise<string> => {
   try {
+    if (!image1?.data || !image2?.data) {
+      throw new Error('Invalid image data');
+    }
+
+    if (!apiKey) {
+      throw new Error('API key is required');
+    }
+
     const response = await axios.post(
       CLAUDE_API_ENDPOINT,
       { image1, image2, apiKey },
@@ -109,6 +125,7 @@ export const generatePrompt = async (
         headers: {
           'Content-Type': 'application/json',
         },
+        timeout: 30000,
       }
     );
 
@@ -130,13 +147,34 @@ export const generateVideo = async (
   apiKey: string
 ): Promise<string> => {
   try {
+    if (!prompt) {
+      throw new Error('Prompt is required');
+    }
+
+    if (!image1?.data || !image2?.data) {
+      throw new Error('Invalid image data');
+    }
+
+    if (!apiKey) {
+      throw new Error('API key is required');
+    }
+
     const response = await axios.post(
       FAL_API_ENDPOINT,
-      { prompt, image1, image2, apiKey },
+      { 
+        prompt, 
+        image1, 
+        image2, 
+        apiKey,
+        model: 'kling-1.6',
+        duration: 4,
+        aspect_ratio: '16:9'
+      },
       {
         headers: {
           'Content-Type': 'application/json',
         },
+        timeout: 30000,
       }
     );
 
