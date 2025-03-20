@@ -29,9 +29,13 @@ const RETRY_DELAY = 3000; // 3 seconds
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Get the base URL from window.location in production
 const PROXY_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://make-video1.vercel.app/api'
-  : 'http://localhost:3000/api';
+  ? window.location.origin 
+  : 'http://localhost:3000';
+
+const CLAUDE_API_ENDPOINT = `${PROXY_BASE_URL}/api/claude`;
+const FAL_API_ENDPOINT = `${PROXY_BASE_URL}/api/fal`;
 
 interface ClaudeMessage {
   model: string;
@@ -59,120 +63,91 @@ interface FalRequest {
   aspect_ratio: string;
 }
 
+interface ImageData {
+  data: string;
+  type: string;
+}
+
+interface ApiError {
+  error?: string;
+  message?: string;
+}
+
+const handleApiError = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    const apiError = error.response?.data as ApiError;
+    return apiError?.error || apiError?.message || error.message || 'API request failed';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'An unexpected error occurred';
+};
+
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
       const base64String = reader.result as string;
-      resolve(base64String); // Send the complete data URL
+      resolve(base64String);
     };
     reader.onerror = error => reject(error);
   });
 };
 
-export const generatePrompt = async (image1: File, image2: File, claudeApiKey: string): Promise<string> => {
+export const generatePrompt = async (
+  image1: ImageData,
+  image2: ImageData,
+  apiKey: string
+): Promise<string> => {
   try {
-    console.log('Converting images to base64...');
-    const image1Base64 = await fileToBase64(image1);
-    const image2Base64 = await fileToBase64(image2);
-    console.log('Images converted successfully');
+    const response = await axios.post(
+      CLAUDE_API_ENDPOINT,
+      { image1, image2, apiKey },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-    console.log('Sending request to server...');
-    const response = await axios.post(`${PROXY_BASE_URL}/claude`, {
-      image1: {
-        type: image1.type,
-        data: image1Base64
-      },
-      image2: {
-        type: image2.type,
-        data: image2Base64
-      },
-      apiKey: claudeApiKey
-    });
-
-    if (!response.data || !response.data.prompt) {
-      const errorMessage = typeof response.data?.error === 'object' 
-        ? JSON.stringify(response.data.error)
-        : response.data?.error || 'Invalid response from server';
-      console.error('Server response error:', errorMessage);
-      throw new Error(errorMessage);
+    if (!response.data?.prompt) {
+      throw new Error('Invalid response from Claude API');
     }
 
     return response.data.prompt;
   } catch (error) {
-    console.error('Error in generatePrompt:', error);
-    
-    // Handle Axios errors
-    if (axios.isAxiosError(error)) {
-      const errorData = error.response?.data;
-      let errorMessage = 'Server error';
-      
-      if (errorData) {
-        if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        } else if (typeof errorData.error === 'string') {
-          errorMessage = errorData.error;
-        } else if (typeof errorData.error === 'object') {
-          errorMessage = JSON.stringify(errorData.error);
-        } else if (typeof errorData.message === 'string') {
-          errorMessage = errorData.message;
-        }
-      }
-      
-      throw new Error(errorMessage);
-    }
-    
-    // Handle other errors
-    throw new Error(error instanceof Error ? error.message : 'Failed to generate prompt');
+    console.error('Error generating prompt:', error);
+    throw new Error(handleApiError(error));
   }
 };
 
 export const generateVideo = async (
-  image1: File,
-  image2: File,
   prompt: string,
-  apiKey: string,
-  testMode: boolean = false
+  image1: ImageData,
+  image2: ImageData,
+  apiKey: string
 ): Promise<string> => {
   try {
-    // Convert images to base64
-    const image1Base64 = await fileToBase64(image1);
-    const image2Base64 = await fileToBase64(image2);
+    const response = await axios.post(
+      FAL_API_ENDPOINT,
+      { prompt, image1, image2, apiKey },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-    if (testMode) {
-      return 'https://example.com/test-video.mp4';
+    if (!response.data?.videoUrl) {
+      throw new Error('Invalid response from FAL API');
     }
 
-    // Call our proxy endpoint instead of FAL.ai API directly
-    const response = await axios.post(`${PROXY_BASE_URL}/fal`, {
-      image1: image1Base64,
-      image2: image2Base64,
-      prompt,
-      apiKey,
-      model: 'kling-1.6',
-      duration: 4,
-      aspect_ratio: '16:9'
-    });
-
-    if (!response.data || !response.data.video_url) {
-      const errorMessage = response.data?.error || 'Invalid response from server';
-      console.error('Server response error:', errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    return response.data.video_url;
+    return response.data.videoUrl;
   } catch (error) {
     console.error('Error generating video:', error);
-    
-    // Handle Axios errors
-    if (axios.isAxiosError(error)) {
-      const errorMessage = error.response?.data?.error || error.message;
-      throw new Error(errorMessage);
-    }
-    
-    // Handle other errors
-    throw error instanceof Error ? error : new Error('Failed to generate video');
+    throw new Error(handleApiError(error));
   }
 };
 
