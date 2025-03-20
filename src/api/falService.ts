@@ -92,22 +92,23 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
     });
 
     if (!response.data || !response.data.prompt) {
-      console.error('Invalid server response:', response.data);
-      throw new Error('Invalid response from server');
+      const errorMessage = response.data?.error || 'Invalid response from server';
+      console.error('Server response error:', errorMessage);
+      throw new Error(errorMessage);
     }
 
     return response.data.prompt;
   } catch (error) {
     console.error('Error in generatePrompt:', error);
+    
+    // Handle Axios errors
     if (axios.isAxiosError(error)) {
-      if (error.response) {
-        const errorMessage = error.response.data?.error || error.response.data?.message || 'Server error';
-        throw new Error(`Server error: ${error.response.status} - ${errorMessage}`);
-      } else if (error.request) {
-        throw new Error('No response received from server. Please check your internet connection.');
-      }
+      const errorMessage = error.response?.data?.error || error.message;
+      throw new Error(errorMessage);
     }
-    throw error instanceof Error ? error : new Error('Failed to generate prompt from images');
+    
+    // Handle other errors
+    throw error instanceof Error ? error : new Error('Failed to generate prompt');
   }
 };
 
@@ -139,16 +140,23 @@ export const generateVideo = async (
     });
 
     if (!response.data || !response.data.video_url) {
-      throw new Error('Invalid response from server');
+      const errorMessage = response.data?.error || 'Invalid response from server';
+      console.error('Server response error:', errorMessage);
+      throw new Error(errorMessage);
     }
 
     return response.data.video_url;
   } catch (error) {
     console.error('Error generating video:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(`Server error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+    
+    // Handle Axios errors
+    if (axios.isAxiosError(error)) {
+      const errorMessage = error.response?.data?.error || error.message;
+      throw new Error(errorMessage);
     }
-    throw new Error('Failed to generate video');
+    
+    // Handle other errors
+    throw error instanceof Error ? error : new Error('Failed to generate video');
   }
 };
 
