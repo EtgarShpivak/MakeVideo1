@@ -29,8 +29,9 @@ const RETRY_DELAY = 3000; // 3 seconds
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const FAL_API_URL = 'https://api.fal.ai/v1/video-generation';
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+const PROXY_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://make-video1.vercel.app/api'
+  : 'http://localhost:3000/api';
 
 interface ClaudeMessage {
   model: string;
@@ -64,66 +65,32 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
     const image1Base64 = await fileToBase64(image1);
     const image2Base64 = await fileToBase64(image2);
 
-    // Prepare the message for Claude
-    const message = {
-      model: "claude-3-opus-20240229",
-      max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "I have two images showing a child at different ages, and I want to create a meaningful video transition between them. Please analyze these images carefully and create a detailed, emotionally resonant prompt that captures the essence of growing up and the passage of time. Focus on:\n\n1. Physical changes (height, facial features, etc.)\n2. Emotional development visible in expressions\n3. Environmental changes or constants\n4. Meaningful transition elements that could highlight the growth journey\n5. Cinematic techniques that could enhance the emotional impact\n\nMake the prompt highly descriptive and specific, suitable for an AI video generation model to create a touching transition that captures the beauty of childhood development."
-            },
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: image1.type,
-                data: image1Base64
-              }
-            },
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: image2.type,
-                data: image2Base64
-              }
-            }
-          ]
-        }
-      ]
-    };
-
-    // Call Claude API
-    const response = await axios.post(CLAUDE_API_URL, message, {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': claudeApiKey,
-        'anthropic-version': '2024-01-01'
+    // Call our proxy endpoint instead of Claude API directly
+    const response = await axios.post(`${PROXY_BASE_URL}/claude`, {
+      image1: {
+        type: image1.type,
+        data: image1Base64
       },
-      timeout: 30000 // 30 second timeout
+      image2: {
+        type: image2.type,
+        data: image2Base64
+      },
+      apiKey: claudeApiKey
     });
 
-    if (!response.data || !response.data.content || !response.data.content[0] || !response.data.content[0].text) {
-      throw new Error('Invalid response from Claude API');
+    if (!response.data || !response.data.prompt) {
+      throw new Error('Invalid response from server');
     }
 
-    return response.data.content[0].text;
+    return response.data.prompt;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        throw new Error(`Claude API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        throw new Error(`Server error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
       } else if (error.request) {
-        // The request was made but no response was received
-        throw new Error('No response received from Claude API. Please check your internet connection and API key.');
+        throw new Error('No response received from server. Please check your internet connection.');
       }
     }
-    // Pass through the error message if it's already an Error object
     throw error instanceof Error ? error : new Error('Failed to generate prompt from images');
   }
 };
@@ -144,29 +111,27 @@ export const generateVideo = async (
       return 'https://example.com/test-video.mp4';
     }
 
-    const requestData: FalRequest = {
+    // Call our proxy endpoint instead of FAL.ai API directly
+    const response = await axios.post(`${PROXY_BASE_URL}/fal`, {
       image1: image1Base64,
       image2: image2Base64,
       prompt,
+      apiKey,
       model: 'kling-1.6',
       duration: 4,
       aspect_ratio: '16:9'
-    };
+    });
 
-    const response = await axios.post(
-      FAL_API_URL,
-      requestData,
-      {
-        headers: {
-          'Authorization': `Key ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    if (!response.data || !response.data.video_url) {
+      throw new Error('Invalid response from server');
+    }
 
     return response.data.video_url;
   } catch (error) {
     console.error('Error generating video:', error);
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(`Server error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+    }
     throw new Error('Failed to generate video');
   }
 };

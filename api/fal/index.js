@@ -1,5 +1,5 @@
 // Standard Vercel API route structure
-const axios = require('axios');
+import axios from 'axios';
 const https = require('https');
 
 // Simple UUID generator
@@ -24,7 +24,9 @@ function isTestRequest(req) {
   return req.query.test === 'true' || req.query.debug === 'true';
 }
 
-module.exports = async (req, res) => {
+const FAL_API_URL = 'https://api.fal.ai/v1/video-generation';
+
+export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -59,47 +61,33 @@ module.exports = async (req, res) => {
     if (reqBodySafe.apiKey) reqBodySafe.apiKey = '***REDACTED***';
     console.log('[DEBUG] Request body:', JSON.stringify(reqBodySafe));
     
-    const { images, apiKey, prompt, negativePrompt, duration, aspectRatio } = req.body;
+    const { image1, image2, prompt, apiKey, model, duration, aspect_ratio } = req.body;
     
-    if (!apiKey) {
-      console.log('[ERROR] API key missing');
-      return res.status(400).json({ error: 'API key is required' });
+    if (!image1 || !image2 || !prompt || !apiKey) {
+      console.log('[ERROR] Missing required parameters');
+      return res.status(400).json({ error: 'Missing required parameters' });
     }
     
-    if (!images || images.length < 1) {
-      console.log('[ERROR] No images provided');
-      return res.status(400).json({ error: 'At least 1 image is required' });
-    }
-    
-    console.log(`[INFO] Processing request with ${images.length} images`);
-    
-    // Get the first image (for Kling model start image)
-    const startImage = images[0];
-    
-    // Get the second image if available (for Kling model tail image)
-    const tailImage = images.length >= 2 ? images[1] : null;
+    console.log(`[INFO] Processing request with images: ${image1}, ${image2}`);
     
     // Validate image format
-    if (!startImage) {
+    if (!image1) {
       console.log('[ERROR] Invalid image data provided - null or undefined image');
       return res.status(400).json({ error: 'Invalid image data provided' });
     }
     
     // Default prompt if none provided
     const videoPrompt = prompt || "A cinematic time-lapse showing progression";
-    const videoDuration = duration || 5; // Default to 5 seconds
-    const videoAspectRatio = aspectRatio || "16:9"; // Default aspect ratio
+    const videoDuration = duration || 4; // Default to 4 seconds
+    const videoAspectRatio = aspect_ratio || "16:9"; // Default aspect ratio
     
     // Log a small part of the image to verify format
     try {
-      console.log('[DEBUG] Start image format check (first 30 chars):', typeof startImage === 'string' ? startImage.substring(0, 30) : typeof startImage);
-      if (tailImage) {
-        console.log('[DEBUG] Tail image format check (first 30 chars):', typeof tailImage === 'string' ? tailImage.substring(0, 30) : typeof tailImage);
+      console.log('[DEBUG] Start image format check (first 30 chars):', typeof image1 === 'string' ? image1.substring(0, 30) : typeof image1);
+      if (image2) {
+        console.log('[DEBUG] Tail image format check (first 30 chars):', typeof image2 === 'string' ? image2.substring(0, 30) : typeof image2);
       }
       console.log('[DEBUG] Using prompt:', videoPrompt);
-      if (negativePrompt) {
-        console.log('[DEBUG] Using negative prompt:', negativePrompt);
-      }
       console.log('[DEBUG] Using duration:', videoDuration);
       console.log('[DEBUG] Using aspect ratio:', videoAspectRatio);
     } catch (e) {
@@ -108,13 +96,13 @@ module.exports = async (req, res) => {
     }
     
     // Validate base64 images
-    if (typeof startImage === 'string' && startImage.startsWith('data:')) {
-      if (!isValidBase64Image(startImage)) {
+    if (typeof image1 === 'string' && image1.startsWith('data:')) {
+      if (!isValidBase64Image(image1)) {
         console.log('[ERROR] Invalid base64 image format for start image');
         return res.status(400).json({ error: 'Invalid image format. Start image must be a valid base64 encoded JPG or PNG.' });
       }
       
-      if (tailImage && typeof tailImage === 'string' && tailImage.startsWith('data:') && !isValidBase64Image(tailImage)) {
+      if (image2 && typeof image2 === 'string' && image2.startsWith('data:') && !isValidBase64Image(image2)) {
         console.log('[ERROR] Invalid base64 image format for tail image');
         return res.status(400).json({ error: 'Invalid image format. Tail image must be a valid base64 encoded JPG or PNG.' });
       }
@@ -136,195 +124,27 @@ module.exports = async (req, res) => {
     }
     
     try {
-      // Use the Kling 1.6 Image to Video model
-      const falEndpoint = 'https://api.fal.ai/models/fal-ai/kling-video/v1.6/pro/image-to-video';
-      console.log('[INFO] Using FAL.ai endpoint:', falEndpoint);
-      
-      // Determine if image is URL or base64 data
-      const isStartBase64 = typeof startImage === 'string' && startImage.startsWith('data:');
-      const isTailBase64 = tailImage && typeof tailImage === 'string' && tailImage.startsWith('data:');
-      
-      // Create a unique request ID
-      const requestId = generateUUID();
-      
-      // Prepare payload according to Kling model documentation
-      let payload = {
+      const requestData = {
+        image1,
+        image2,
         prompt: videoPrompt,
+        model: model || 'kling-1.6',
         duration: videoDuration.toString(),
         aspect_ratio: videoAspectRatio
       };
-      
-      // Add negative prompt if provided
-      if (negativePrompt && negativePrompt.trim() !== '') {
-        payload.negative_prompt = negativePrompt;
-      }
-      
-      // Add start image according to whether it's URL or base64 data
-      if (isStartBase64) {
-        console.log('[INFO] Using base64 image format for start image');
-        payload.image = startImage; // For base64, use 'image' field
-      } else {
-        console.log('[INFO] Using URL image format for start image');
-        payload.image_url = startImage;
-      }
-      
-      // Add tail image if available
-      if (tailImage) {
-        if (isTailBase64) {
-          console.log('[INFO] Using base64 image format for tail image');
-          payload.tail_image = tailImage; // For base64, use 'tail_image' field
-        } else {
-          console.log('[INFO] Using URL image format for tail image');
-          payload.tail_image_url = tailImage;
+
+      const response = await axios.post(FAL_API_URL, requestData, {
+        headers: {
+          'Authorization': `Key ${apiKey}`,
+          'Content-Type': 'application/json'
         }
-      }
-      
-      console.log('[INFO] Prepared payload with request ID:', requestId);
-      console.log('[DEBUG] Payload keys:', Object.keys(payload).join(', '));
-      
-      // Configure the request with a longer timeout
-      const agent = new https.Agent({
-        keepAlive: true,
-        timeout: 360000, // 6 minute socket timeout (Kling takes longer)
-        rejectUnauthorized: true // Ensure SSL verification
       });
-      
-      // Set up headers with the API key
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Key ${apiKey}`,
-        'Accept': 'application/json',
-        'User-Agent': 'BarMitzvahVideoGenerator/1.0'
-      };
-      
-      console.log('[INFO] Sending request to FAL.ai...');
-      
-      // Make the API request with proper error handling
-      try {
-        console.log('[DEBUG] Making axios request to:', falEndpoint);
-        
-        const response = await axios({
-          method: 'POST',
-          url: falEndpoint,
-          data: payload,
-          headers: headers,
-          httpsAgent: agent,
-          timeout: 360000, // 6 minute request timeout for Kling
-          validateStatus: status => status < 500, // Only treat 500+ as errors
-          maxContentLength: 100 * 1024 * 1024, // 100MB max response size
-          maxBodyLength: 100 * 1024 * 1024 // 100MB max request size
-        });
-        
-        console.log(`[INFO] FAL.ai response received with status: ${response.status}`);
-        
-        // Handle non-200 responses
-        if (response.status !== 200) {
-          console.error('[ERROR] Error response from FAL.ai:', response.status);
-          try {
-            console.error('[ERROR] Error details:', JSON.stringify(response.data));
-          } catch (e) {
-            console.error('[ERROR] Could not stringify response data');
-          }
-          
-          return res.status(response.status).json({
-            error: true,
-            message: response.data?.message || response.data?.error || `Error from FAL.ai API (${response.status})`
-          });
-        }
-        
-        // Log response structure
-        console.log('[DEBUG] Response data keys:', Object.keys(response.data).join(', '));
-        
-        // Check response format for Kling model
-        if (response.data && response.data.video && response.data.video.url) {
-          console.log('[INFO] Found video URL in video.url field');
-          return res.json({ 
-            output: { 
-              video: response.data.video.url 
-            } 
-          });
-        } else {
-          console.error('[ERROR] Invalid response structure:', JSON.stringify(response.data).substring(0, 500));
-          return res.status(500).json({
-            error: true,
-            message: 'Invalid response structure from FAL.ai API'
-          });
-        }
-      } catch (axiosError) {
-        console.error('[ERROR] Error in axios request:', axiosError.message);
-        console.error('[ERROR] Error stack:', axiosError.stack);
-        
-        // Detailed error logging
-        if (axiosError.code) {
-          console.error('[ERROR] Error code:', axiosError.code);
-        }
-        
-        if (axiosError.response) {
-          console.error('[ERROR] Response status:', axiosError.response.status);
-          console.error('[ERROR] Response headers:', JSON.stringify(axiosError.response.headers));
-          try {
-            console.error('[ERROR] Response data:', JSON.stringify(axiosError.response.data).substring(0, 500));
-          } catch (e) {
-            console.error('[ERROR] Could not stringify response data');
-          }
-          
-          // Check for specific error messages
-          if (axiosError.response.status === 401 || 
-              (axiosError.response.data && axiosError.response.data.detail && 
-              axiosError.response.data.detail.includes('authentication'))) {
-            return res.status(401).json({
-              error: true,
-              message: 'Invalid API key. Please check your FAL.ai API key.'
-            });
-          }
-          
-          // Return the actual error from the API
-          return res.status(axiosError.response.status).json({
-            error: true,
-            message: axiosError.response.data?.message || 
-                    axiosError.response.data?.detail ||
-                    axiosError.response.data?.error ||
-                    `Error ${axiosError.response.status} from FAL.ai API`
-          });
-        } else if (axiosError.request) {
-          // The request was made but no response was received
-          console.error('[ERROR] No response received - request details:');
-          console.error('[ERROR] Request URL:', axiosError.config?.url);
-          console.error('[ERROR] Request method:', axiosError.config?.method);
-          console.error('[ERROR] Request headers:', JSON.stringify(axiosError.config?.headers || {}).replace(/"Authorization":"[^"]+"/g, '"Authorization":"REDACTED"'));
-          
-          // Handle specific network errors
-          if (axiosError.code === 'ECONNABORTED') {
-            return res.status(504).json({
-              error: true,
-              message: 'Request to FAL.ai timed out after 6 minutes. The Kling model takes longer to generate videos - please try again.'
-            });
-          } else if (axiosError.code === 'ENOTFOUND') {
-            return res.status(503).json({
-              error: true, 
-              message: 'Could not resolve FAL.ai hostname. DNS resolution failed.'
-            });
-          } else {
-            return res.status(500).json({
-              error: true,
-              message: `Network error: ${axiosError.code || 'No response received from FAL.ai API'}`
-            });
-          }
-        } else {
-          // Something happened in setting up the request
-          console.error('[ERROR] Error setting up request:', axiosError.message);
-          return res.status(500).json({
-            error: true,
-            message: `Error setting up request: ${axiosError.message}`
-          });
-        }
-      }
-    } catch (apiError) {
-      console.error('[ERROR] API processing error:', apiError.message);
-      console.error('[ERROR] API processing error stack:', apiError.stack);
-      return res.status(500).json({
-        error: true,
-        message: `Error processing API request: ${apiError.message}`
+
+      res.status(200).json({ video_url: response.data.video_url });
+    } catch (error) {
+      console.error('FAL.ai API error:', error);
+      res.status(500).json({ 
+        error: error.response?.data?.error || error.message || 'Internal server error'
       });
     }
   } catch (error) {
@@ -335,4 +155,4 @@ module.exports = async (req, res) => {
       message: error.message || 'Unknown error occurred'
     });
   }
-};
+}
