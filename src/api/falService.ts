@@ -65,7 +65,7 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
     const image2Base64 = await fileToBase64(image2);
 
     // Prepare the message for Claude
-    const message: ClaudeMessage = {
+    const message = {
       model: "claude-3-opus-20240229",
       max_tokens: 1000,
       messages: [
@@ -102,14 +102,29 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': claudeApiKey,
-        'anthropic-version': '2023-06-01'
-      }
+        'anthropic-version': '2024-01-01'
+      },
+      timeout: 30000 // 30 second timeout
     });
+
+    if (!response.data || !response.data.content || !response.data.content[0] || !response.data.content[0].text) {
+      throw new Error('Invalid response from Claude API');
+    }
 
     return response.data.content[0].text;
   } catch (error) {
-    console.error('Error generating prompt:', error);
-    throw new Error('Failed to generate prompt from images');
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        throw new Error(`Claude API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      } else if (error.request) {
+        // The request was made but no response was received
+        throw new Error('No response received from Claude API. Please check your internet connection and API key.');
+      }
+    }
+    // Pass through the error message if it's already an Error object
+    throw error instanceof Error ? error : new Error('Failed to generate prompt from images');
   }
 };
 

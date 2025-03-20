@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from 'react';
-import { Box, Button, TextField, Typography, Paper, CircularProgress, Grid, Alert, IconButton, List, ListItem, ListItemText, ListItemSecondaryAction } from '@mui/material';
-import { CloudUpload, Delete, Download, Refresh } from '@mui/icons-material';
+import React, { useState } from 'react';
+import { Box, Button, TextField, Typography, Paper, CircularProgress, Grid, Alert, List, ListItem, ListItemText, ListItemSecondaryAction, IconButton } from '@mui/material';
+import { Download, Refresh } from '@mui/icons-material';
 import { generateVideo, generatePrompt } from '../api/falService';
+import { useApp } from '../context/AppContext';
 
 interface Prompt {
   fromImage: number;
@@ -9,13 +10,8 @@ interface Prompt {
   text: string;
 }
 
-interface ButtonProps {
-  component: React.ElementType;
-}
-
 export const VideoGenerator: React.FC = () => {
-  const [images, setImages] = useState<File[]>([]);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const { images } = useApp();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [videos, setVideos] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,25 +21,6 @@ export const VideoGenerator: React.FC = () => {
   const [testMode, setTestMode] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
-
-  const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length > 50) {
-      setError('Maximum 50 images allowed');
-      return;
-    }
-    setImages(files);
-    setImageUrls(files.map(file => URL.createObjectURL(file)));
-    setError(null);
-  }, []);
-
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-    setImageUrls(prev => {
-      URL.revokeObjectURL(prev[index]);
-      return prev.filter((_, i) => i !== index);
-    });
-  };
 
   const handleGeneratePrompts = async () => {
     if (!claudeApiKey) {
@@ -63,7 +40,7 @@ export const VideoGenerator: React.FC = () => {
     try {
       const newPrompts: Prompt[] = [];
       for (let i = 0; i < images.length - 1; i++) {
-        const prompt = await generatePrompt(images[i], images[i + 1], claudeApiKey);
+        const prompt = await generatePrompt(images[i].file, images[i + 1].file, claudeApiKey);
         newPrompts.push({
           fromImage: i + 1,
           toImage: i + 2,
@@ -72,7 +49,9 @@ export const VideoGenerator: React.FC = () => {
       }
       setPrompts(newPrompts);
     } catch (err) {
+      console.error('Error generating prompts:', err);
       setError(err instanceof Error ? err.message : 'Failed to generate prompts');
+      setDiagnosticInfo(err);
     } finally {
       setLoading(false);
     }
@@ -105,8 +84,8 @@ export const VideoGenerator: React.FC = () => {
         if (!prompt) continue;
 
         const videoUrl = await generateVideo(
-          images[i],
-          images[i + 1],
+          images[i].file,
+          images[i + 1].file,
           prompt,
           falApiKey,
           testMode
@@ -115,7 +94,9 @@ export const VideoGenerator: React.FC = () => {
       }
       setVideos(newVideos);
     } catch (err) {
+      console.error('Error generating videos:', err);
       setError(err instanceof Error ? err.message : 'Failed to generate videos');
+      setDiagnosticInfo(err);
     } finally {
       setLoading(false);
     }
@@ -132,10 +113,6 @@ export const VideoGenerator: React.FC = () => {
 
   return (
     <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Video Generator
-      </Typography>
-
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={6}>
@@ -160,68 +137,20 @@ export const VideoGenerator: React.FC = () => {
           </Grid>
         </Grid>
 
-        <Box sx={{ mt: 2 }}>
-          <input
-            accept="image/*"
-            style={{ display: 'none' }}
-            id="image-upload"
-            multiple
-            type="file"
-            onChange={handleImageUpload}
-          />
-          <label htmlFor="image-upload">
-            <Button
-              variant="contained"
-              component="span"
-              startIcon={<CloudUpload />}
-            >
-              Upload Images (2-50)
-            </Button>
-          </label>
-        </Box>
-
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
           </Alert>
         )}
 
-        {imageUrls.length > 0 && (
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Uploaded Images ({imageUrls.length})
-            </Typography>
-            <Grid container spacing={2}>
-              {imageUrls.map((url, index) => (
-                <Grid item xs={12} sm={6} md={4} key={index}>
-                  <Paper sx={{ p: 1, position: 'relative' }}>
-                    <img
-                      src={url}
-                      alt={`Upload ${index + 1}`}
-                      style={{ width: '100%', height: 'auto' }}
-                    />
-                    <IconButton
-                      size="small"
-                      onClick={() => removeImage(index)}
-                      sx={{ position: 'absolute', top: 4, right: 4 }}
-                    >
-                      <Delete />
-                    </IconButton>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
-        )}
-
-        <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+        <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
           <Button
             variant="contained"
             onClick={handleGeneratePrompts}
             disabled={loading || images.length < 2}
             startIcon={loading ? <CircularProgress size={20} /> : <Refresh />}
           >
-            Make Prompts
+            Generate Prompts
           </Button>
 
           <Button
@@ -230,7 +159,7 @@ export const VideoGenerator: React.FC = () => {
             disabled={loading || prompts.length === 0}
             startIcon={loading ? <CircularProgress size={20} /> : <Refresh />}
           >
-            Make Videos
+            Generate Videos
           </Button>
 
           <Button
@@ -250,7 +179,7 @@ export const VideoGenerator: React.FC = () => {
         </Box>
 
         {prompts.length > 0 && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 3 }}>
             <Typography variant="h6" gutterBottom>
               Generated Prompts
             </Typography>
@@ -268,7 +197,7 @@ export const VideoGenerator: React.FC = () => {
         )}
 
         {videos.length > 0 && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 3 }}>
             <Typography variant="h6" gutterBottom>
               Generated Videos
             </Typography>
@@ -294,7 +223,7 @@ export const VideoGenerator: React.FC = () => {
         )}
 
         {showDiagnostics && diagnosticInfo && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 3 }}>
             <Typography variant="h6" gutterBottom>
               Diagnostic Information
             </Typography>
