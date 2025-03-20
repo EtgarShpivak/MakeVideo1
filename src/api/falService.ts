@@ -29,140 +29,144 @@ const RETRY_DELAY = 3000; // 3 seconds
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const generateVideo = async (
-  images: string[], 
-  apiKey: string, 
-  options: GenerateVideoOptions = {}
-): Promise<string> => {
-  let lastError: Error | null = null;
-  
-  const { 
-    testMode = false, 
-    retryOnFailure = true, 
-    prompt = "A cinematic time-lapse showing progression",
-    negativePrompt = "",
-    duration = 5,
-    aspectRatio = "16:9"
-  } = options;
-  
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`Attempt ${attempt + 1}/${MAX_RETRIES + 1} to generate video with ${images.length} images`);
-      
-      // Always use the Vercel API route since we're deployed
-      const endpoint = '/api/fal';
-      
-      console.log('Using production endpoint:', endpoint);
-      
-      // Check image format
-      const firstImage = images[0];
-      const imageFormat = firstImage.substring(0, 30);
-      console.log('Image format check:', imageFormat);
-      console.log('Using prompt:', prompt);
-      
-      if (negativePrompt) {
-        console.log('Using negative prompt:', negativePrompt);
-      }
-      
-      console.log('Using duration:', duration);
-      console.log('Using aspect ratio:', aspectRatio);
-      
-      // Add a unique cache-busting parameter to avoid any caching issues
-      const cacheBuster = `?t=${Date.now()}`;
-      // Add test mode parameter if needed
-      const testParam = testMode ? '&test=true' : '';
-      const requestUrl = `${endpoint}${cacheBuster}${testParam}`;
-      
-      console.log(`Sending request to ${requestUrl}`);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 minute timeout for Kling
-      
-      try {
-        const response = await fetch(requestUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            images, 
-            apiKey,
-            prompt,
-            negativePrompt,
-            duration,
-            aspectRatio
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-          let errorData;
-          try {
-            errorData = await response.json();
-            console.error('Error response data:', errorData);
-          } catch (e) {
-            console.error('Failed to parse error response', e);
-            errorData = { message: 'Unknown error' };
-          }
-          
-          // Handle specific error cases
-          if (response.status === 401) {
-            throw new Error('Invalid API key. Please check your FAL.ai API key.');
-          } else if (response.status === 404) {
-            throw new Error('API endpoint not found. Please check the server configuration.');
-          } else if (errorData.message) {
-            throw new Error(`API Error: ${errorData.message}`);
-          } else {
-            throw new Error(`API Error: ${response.statusText}`);
-          }
+const FAL_API_URL = 'https://api.fal.ai/v1/video-generation';
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+
+interface ClaudeMessage {
+  model: string;
+  max_tokens: number;
+  messages: {
+    role: string;
+    content: {
+      type: string;
+      text?: string;
+      source?: {
+        type: string;
+        media_type: string;
+        data: string;
+      };
+    }[];
+  }[];
+}
+
+interface FalRequest {
+  image1: string;
+  image2: string;
+  prompt: string;
+  model: string;
+  duration: number;
+  aspect_ratio: string;
+}
+
+export const generatePrompt = async (image1: File, image2: File, claudeApiKey: string): Promise<string> => {
+  try {
+    // Convert images to base64
+    const image1Base64 = await fileToBase64(image1);
+    const image2Base64 = await fileToBase64(image2);
+
+    // Prepare the message for Claude
+    const message: ClaudeMessage = {
+      model: "claude-3-opus-20240229",
+      max_tokens: 1000,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "I have two images that I want to create a video transition between. Please analyze these images and create a detailed prompt that describes how the video should transition from the first image to the second. The prompt should be descriptive and focus on the visual elements, movement, and style of the transition. Make it suitable for an AI video generation model."
+            },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: image1.type,
+                data: image1Base64
+              }
+            },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: image2.type,
+                data: image2Base64
+              }
+            }
+          ]
         }
-        
-        const data = await response.json();
-        console.log('Response data structure:', Object.keys(data).join(', '));
-        
-        if (data.output && data.output.video) {
-          console.log('Successfully received video URL');
-          return data.output.video;
-        } else {
-          console.error('Invalid response format:', data);
-          throw new Error('Invalid response format from API');
-        }
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        
-        if (fetchError.name === 'AbortError') {
-          console.error('Request timed out');
-          throw new Error('Request timed out. The Kling model can take several minutes to generate a video. Please try again.');
-        } else {
-          throw fetchError;
-        }
+      ]
+    };
+
+    // Call Claude API
+    const response = await axios.post(CLAUDE_API_URL, message, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': claudeApiKey,
+        'anthropic-version': '2023-06-01'
       }
-    } catch (error: any) {
-      lastError = error;
-      console.error(`Attempt ${attempt + 1} failed:`, error.message);
-      
-      // If network-related error and we have retries left and retry is enabled, wait and retry
-      if (retryOnFailure && 
-          attempt < MAX_RETRIES && 
-          (error.message.includes('No response received') || 
-           error.message.includes('timed out') ||
-           error.message.includes('Failed to fetch'))) {
-        console.log(`Retrying in ${RETRY_DELAY / 1000} seconds...`);
-        await sleep(RETRY_DELAY);
-        continue;
-      }
-      
-      // No more retries or non-retriable error
-      throw error;
-    }
+    });
+
+    return response.data.content[0].text;
+  } catch (error) {
+    console.error('Error generating prompt:', error);
+    throw new Error('Failed to generate prompt from images');
   }
-  
-  // If we reach here, all retries failed
-  throw lastError || new Error('Failed to generate video after multiple attempts');
+};
+
+export const generateVideo = async (
+  image1: File,
+  image2: File,
+  prompt: string,
+  apiKey: string,
+  testMode: boolean = false
+): Promise<string> => {
+  try {
+    // Convert images to base64
+    const image1Base64 = await fileToBase64(image1);
+    const image2Base64 = await fileToBase64(image2);
+
+    if (testMode) {
+      return 'https://example.com/test-video.mp4';
+    }
+
+    const requestData: FalRequest = {
+      image1: image1Base64,
+      image2: image2Base64,
+      prompt,
+      model: 'kling-1.6',
+      duration: 4,
+      aspect_ratio: '16:9'
+    };
+
+    const response = await axios.post(
+      FAL_API_URL,
+      requestData,
+      {
+        headers: {
+          'Authorization': `Key ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return response.data.video_url;
+  } catch (error) {
+    console.error('Error generating video:', error);
+    throw new Error('Failed to generate video');
+  }
+};
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = reader.result as string;
+      // Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
+      resolve(base64String.split(',')[1]);
+    };
+    reader.onerror = error => reject(error);
+  });
 };
 
 export default {
