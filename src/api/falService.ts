@@ -74,7 +74,7 @@ export const generatePrompt = async (image1: File, image2: File, claudeApiKey: s
           content: [
             {
               type: "text",
-              text: "I have two images that I want to create a video transition between. Please analyze these images and create a detailed prompt that describes how the video should transition from the first image to the second. The prompt should be descriptive and focus on the visual elements, movement, and style of the transition. Make it suitable for an AI video generation model."
+              text: "I have two images showing a child at different ages, and I want to create a meaningful video transition between them. Please analyze these images carefully and create a detailed, emotionally resonant prompt that captures the essence of growing up and the passage of time. Focus on:\n\n1. Physical changes (height, facial features, etc.)\n2. Emotional development visible in expressions\n3. Environmental changes or constants\n4. Meaningful transition elements that could highlight the growth journey\n5. Cinematic techniques that could enhance the emotional impact\n\nMake the prompt highly descriptive and specific, suitable for an AI video generation model to create a touching transition that captures the beauty of childhood development."
             },
             {
               type: "image",

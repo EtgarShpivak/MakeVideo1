@@ -1,7 +1,7 @@
 import { Container, CssBaseline, ThemeProvider, createTheme, Typography, Box } from '@mui/material';
 import { AppProvider } from './context/AppContext';
 import ImageUploader from './components/ImageUploader';
-import VideoGenerator from './components/VideoGenerator';
+import { VideoGenerator } from './components/VideoGenerator';
 
 const theme = createTheme({
   palette: {

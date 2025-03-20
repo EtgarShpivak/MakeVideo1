@@ -1,6 +1,17 @@
 {
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "vite",
+  "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/fal", "destination": "/api/fal/index.js" },
-    { "source": "/api/health", "destination": "/api/health/index.js" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
   ]
 }
