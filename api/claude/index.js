@@ -40,7 +40,7 @@ module.exports = async function handler(req, res) {
             content: [
               {
                 type: 'text',
-                text: 'Analyze these two images showing a child at different ages. Focus on physical changes, emotional development, environmental constants, meaningful transition elements, and cinematic techniques that could enhance emotional impact. Create a detailed prompt for an AI video generation model to create a touching transition between these moments.'
+                text: 'These are personal family photos of my child at different ages. I want to create a meaningful video transition between these moments to capture their growth and development as a cherished family keepsake. Please analyze these images and create a detailed prompt that focuses on:\n\n1. The physical changes and growth visible between the images\n2. The emotional development and personality shown in their expressions\n3. Any meaningful constants in their environment or appearance\n4. Suggestions for gentle, respectful transition elements that highlight their journey\n5. Cinematic techniques that could make this a touching family memory\n\nPlease create a detailed prompt for an AI video generation model that will help create a beautiful transition between these precious moments.'
               },
               {
                 type: 'image',
@@ -65,7 +65,7 @@ module.exports = async function handler(req, res) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
+          'anthropic-api-key': apiKey,
           'anthropic-version': '2023-06-01'
         }
       }

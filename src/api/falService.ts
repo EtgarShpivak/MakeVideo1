@@ -92,16 +92,9 @@ const formatErrorMessage = (error: any): string => {
   return error.message || 'An unexpected error occurred';
 };
 
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const base64String = reader.result as string;
-      resolve(base64String);
-    };
-    reader.onerror = error => reject(error);
-  });
+const getBase64FromDataUrl = (dataUrl: string): string => {
+  const base64Regex = /^data:image\/\w+;base64,/;
+  return dataUrl.replace(base64Regex, '');
 };
 
 export async function generatePrompt(
@@ -115,13 +108,18 @@ export async function generatePrompt(
 
   try {
     const response = await axios.post('/api/claude', {
-      image1: image1.replace(/^data:image\/\w+;base64,/, ''),
-      image2: image2.replace(/^data:image\/\w+;base64,/, ''),
+      image1: getBase64FromDataUrl(image1),
+      image2: getBase64FromDataUrl(image2),
       apiKey
     });
 
+    if (!response.data || !response.data.prompt) {
+      throw new Error('Invalid response from server');
+    }
+
     return response.data.prompt;
   } catch (error: any) {
+    console.error('Error generating prompt:', error);
     throw new Error(formatErrorMessage(error));
   }
 }
@@ -139,13 +137,18 @@ export async function generateVideo(
   try {
     const response = await axios.post('/api/fal', {
       prompt,
-      image1: image1.replace(/^data:image\/\w+;base64,/, ''),
-      image2: image2.replace(/^data:image\/\w+;base64,/, ''),
+      image1: getBase64FromDataUrl(image1),
+      image2: getBase64FromDataUrl(image2),
       apiKey
     });
 
+    if (!response.data || !response.data.url) {
+      throw new Error('Invalid response from server');
+    }
+
     return { url: response.data.url };
   } catch (error: any) {
+    console.error('Error generating video:', error);
     throw new Error(formatErrorMessage(error));
   }
 }
