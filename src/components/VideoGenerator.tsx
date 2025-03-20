@@ -10,6 +10,29 @@ interface Prompt {
   text: string;
 }
 
+interface ImageData {
+  data: string;
+  type: string;
+}
+
+const fileToImageData = async (file: File): Promise<ImageData> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve({
+          data: reader.result,
+          type: file.type || 'image/jpeg'
+        });
+      } else {
+        reject(new Error('Failed to read file'));
+      }
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
 export const VideoGenerator: React.FC = () => {
   const { images } = useApp();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -40,7 +63,10 @@ export const VideoGenerator: React.FC = () => {
     try {
       const newPrompts: Prompt[] = [];
       for (let i = 0; i < images.length - 1; i++) {
-        const prompt = await generatePrompt(images[i].file, images[i + 1].file, claudeApiKey);
+        const image1Data = await fileToImageData(images[i].file);
+        const image2Data = await fileToImageData(images[i + 1].file);
+        
+        const prompt = await generatePrompt(image1Data, image2Data, claudeApiKey);
         newPrompts.push({
           fromImage: i + 1,
           toImage: i + 2,
@@ -83,12 +109,14 @@ export const VideoGenerator: React.FC = () => {
         const prompt = prompts.find(p => p.fromImage === i + 1 && p.toImage === i + 2)?.text;
         if (!prompt) continue;
 
+        const image1Data = await fileToImageData(images[i].file);
+        const image2Data = await fileToImageData(images[i + 1].file);
+
         const videoUrl = await generateVideo(
-          images[i].file,
-          images[i + 1].file,
           prompt,
-          falApiKey,
-          testMode
+          image1Data,
+          image2Data,
+          falApiKey
         );
         newVideos.push(videoUrl);
       }
