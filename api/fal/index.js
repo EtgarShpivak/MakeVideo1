@@ -1,5 +1,5 @@
 // Standard Vercel API route structure
-import axios from 'axios';
+const axios = require('axios');
 const https = require('https');
 
 // Simple UUID generator
@@ -24,9 +24,9 @@ function isTestRequest(req) {
   return req.query.test === 'true' || req.query.debug === 'true';
 }
 
-const FAL_API_URL = 'https://api.fal.ai/v1/video-generation';
+const FAL_API_URL = 'https://api.fal.ai/v1/kling-1.6';
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -61,11 +61,16 @@ export default async function handler(req, res) {
     if (reqBodySafe.apiKey) reqBodySafe.apiKey = '***REDACTED***';
     console.log('[DEBUG] Request body:', JSON.stringify(reqBodySafe));
     
-    const { image1, image2, prompt, apiKey, model, duration, aspect_ratio } = req.body;
+    const { prompt, image1, image2, apiKey } = req.body;
     
-    if (!image1 || !image2 || !prompt || !apiKey) {
+    if (!prompt || !image1 || !image2 || !apiKey) {
       console.log('[ERROR] Missing required parameters');
       return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    if (!image1.data || !image2.data) {
+      console.log('[ERROR] Missing image data');
+      return res.status(400).json({ error: 'Missing image data' });
     }
     
     console.log(`[INFO] Processing request with images: ${image1}, ${image2}`);
@@ -78,8 +83,8 @@ export default async function handler(req, res) {
     
     // Default prompt if none provided
     const videoPrompt = prompt || "A cinematic time-lapse showing progression";
-    const videoDuration = duration || 4; // Default to 4 seconds
-    const videoAspectRatio = aspect_ratio || "16:9"; // Default aspect ratio
+    const videoDuration = 4; // Default to 4 seconds
+    const videoAspectRatio = '16:9'; // Default aspect ratio
     
     // Log a small part of the image to verify format
     try {
@@ -124,35 +129,65 @@ export default async function handler(req, res) {
     }
     
     try {
+      // Get base64 data without the prefix
+      const getBase64Data = (imageData) => {
+        if (typeof imageData !== 'string') {
+          throw new Error('Invalid image data format');
+        }
+        return imageData.startsWith('data:image/') ? imageData.split(',')[1] : imageData;
+      };
+
+      // Process images
+      let image1Base64, image2Base64;
+      try {
+        image1Base64 = getBase64Data(image1.data);
+        image2Base64 = getBase64Data(image2.data);
+      } catch (imageError) {
+        console.error('Error processing images:', imageError);
+        return res.status(400).json({ error: `Invalid image data: ${imageError.message}` });
+      }
+
+      // Prepare FAL API request
       const requestData = {
-        image1,
-        image2,
-        prompt: videoPrompt,
-        model: model || 'kling-1.6',
+        prompt,
+        image1: image1Base64,
+        image2: image2Base64,
         duration: videoDuration.toString(),
         aspect_ratio: videoAspectRatio
       };
 
+      // Make request to FAL API
       const response = await axios.post(FAL_API_URL, requestData, {
         headers: {
-          'Authorization': `Key ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        timeout: 30000,
+        validateStatus: (status) => status === 200
       });
 
-      res.status(200).json({ video_url: response.data.video_url });
-    } catch (error) {
-      console.error('FAL.ai API error:', error);
-      res.status(500).json({ 
-        error: error.response?.data?.error || error.message || 'Internal server error'
-      });
+      if (!response.data?.video_url) {
+        throw new Error('Invalid response format from FAL API');
+      }
+
+      return res.status(200).json({ videoUrl: response.data.video_url });
+    } catch (apiError) {
+      console.error('FAL API error:', apiError);
+
+      if (axios.isAxiosError(apiError)) {
+        const status = apiError.response?.status || 500;
+        const errorMessage = apiError.response?.data?.error?.message ||
+                           apiError.response?.data?.error ||
+                           apiError.message ||
+                           'FAL API error';
+
+        return res.status(status).json({ error: errorMessage });
+      }
+
+      return res.status(500).json({ error: apiError.message || 'Unexpected error calling FAL API' });
     }
   } catch (error) {
-    console.error('[ERROR] General error in proxy request:', error.message);
-    console.error('[ERROR] Error stack:', error.stack);
-    return res.status(500).json({
-      error: true,
-      message: error.message || 'Unknown error occurred'
-    });
+    console.error('Server error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-}
+};
