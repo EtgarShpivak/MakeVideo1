@@ -29,7 +29,14 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const response = await axios.post(
+    // Create a custom axios instance with increased timeout
+    const client = axios.create({
+      timeout: 60000, // 60 seconds
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+
+    const response = await client.post(
       'https://api.anthropic.com/v1/messages',
       {
         model: 'claude-3-sonnet-20240229',
@@ -65,11 +72,15 @@ module.exports = async function handler(req, res) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'anthropic-api-key': apiKey,
+          'x-api-key': apiKey,
           'anthropic-version': '2023-06-01'
         }
       }
     );
+
+    if (!response.data?.content?.[0]?.text) {
+      throw new Error('Invalid response from Claude API');
+    }
 
     res.status(200).json({ prompt: response.data.content[0].text });
   } catch (error) {

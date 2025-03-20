@@ -55,6 +55,13 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    // Create a custom axios instance with increased timeout
+    const client = axios.create({
+      timeout: 120000, // 120 seconds
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+
     // Log request details for debugging
     console.log('Making request to FAL API with:', {
       promptLength: prompt.length,
@@ -63,12 +70,12 @@ module.exports = async function handler(req, res) {
       apiKeyPresent: !!apiKey
     });
 
-    const response = await axios.post(
+    const response = await client.post(
       'https://api.fal.ai/v1/video-generation',
       {
         prompt,
-        image1: image1,
-        image2: image2,
+        image1,
+        image2,
         model: 'kling-1.6',
         duration: 4,
         aspect_ratio: '16:9'
@@ -76,9 +83,8 @@ module.exports = async function handler(req, res) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        timeout: 30000
+          'Authorization': `Key ${apiKey}`
+        }
       }
     );
 
